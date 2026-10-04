@@ -23,6 +23,8 @@ Kerfspan is a fabrication aid, not a machine-safety certificate. **Ready for CAM
 
 More in [docs/screenshots](docs/screenshots/), including the [style library](docs/screenshots/01-style-library.png) and the editor [on a phone](docs/screenshots/12-phone-icon-stencil.png).
 
+For artwork without the editor interface, see the [finished-panel portfolio](docs/portfolio/), covering every Kerfspan cut style plus Material and Back-lit presentation variants.
+
 ## Quick start
 
 You need Docker with Compose, or Podman with `podman compose`, and about 3 GB

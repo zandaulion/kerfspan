@@ -30,6 +30,8 @@ output/
 !web/icons/*.png
 # Product screenshots, rendered from a consented photograph that is never shown.
 !docs/screenshots/*.png
+# Clean product artwork for the public portfolio. Only processed geometry is shown.
+!docs/portfolio/*.png
 
 # Reference material collected from Pinterest: other people's work, kept
 # locally to inspire the filters. It is not ours, so it never enters the
