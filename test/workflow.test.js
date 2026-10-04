@@ -857,3 +857,10 @@ test('application markup has no duplicate element ids', () => {
   const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
   assert.equal(duplicate, undefined, `duplicate id: ${duplicate}`);
 });
+
+test('a page opened without a secure context explains why and cannot redeem', () => {
+  // Cookie, service worker and crypto.subtle all need https or localhost; a
+  // LAN address over plain HTTP would accept an invite and then fail to keep it.
+  assert.match(html, /id="gate-insecure"[^>]*hidden/);
+  assert.match(app, /if \(!window\.isSecureContext\) \{[\s\S]*?gate-insecure[\s\S]*?submit\.disabled = true/);
+});

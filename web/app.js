@@ -39,6 +39,15 @@ function unlockEditorViewport() {
   document.body.classList.remove('editor-open');
 }
 
+// A device cookie, the service worker and Web Crypto all require a secure
+// context. Over plain HTTP from another machine an invite could be redeemed
+// but never kept, and saving would fail later and obscurely; say so up front.
+if (!window.isSecureContext) {
+  document.getElementById('gate-insecure')?.removeAttribute('hidden');
+  const submit = document.getElementById('gate-submit');
+  if (submit) submit.disabled = true;
+}
+
 window.addEventListener('scroll', pinEditorViewport, { passive: true });
 window.addEventListener('pageshow', () => requestAnimationFrame(pinEditorViewport));
 
