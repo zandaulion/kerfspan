@@ -1,4 +1,4 @@
-# Kerfloom: the web app and its photograph-analysis service.
+# Kerfspan: the web app and its photograph-analysis service.
 #
 #   cp site.env.example site.env       # then set ADMIN_TOKEN and PROJECT_ENCRYPTION_KEY
 #   docker compose up -d --build       # or: podman compose up -d --build
@@ -21,7 +21,7 @@ services:
       BIND_HOST: 0.0.0.0
       ANALIZA_URL: http://analysis:8000
     # Loopback by default. Set KERFLOOM_BIND=0.0.0.0 only with a TLS reverse
-    # proxy or VPN in front: browsers refuse Kerfloom's sign-in over plain HTTP
+    # proxy or VPN in front: browsers refuse Kerfspan's sign-in over plain HTTP
     # from another device anyway.
     ports:
       - "${KERFLOOM_BIND:-127.0.0.1}:${KERFLOOM_PORT:-3000}:3000"

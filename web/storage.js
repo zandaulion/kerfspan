@@ -33,7 +33,7 @@ export function workspaceDatabaseName(workspaceId) {
 export function configureStorageWorkspace(workspaceId) {
   const normalized = normalizeWorkspaceId(workspaceId);
   if (activeWorkspaceId && activeWorkspaceId !== normalized) {
-    throw new Error('Changing workspace requires reloading Kerfloom');
+    throw new Error('Changing workspace requires reloading Kerfspan');
   }
   activeWorkspaceId = normalized;
   return activeWorkspaceId;

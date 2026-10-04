@@ -4,7 +4,7 @@ Status: implemented and migration-compatible.
 
 ## Storage contract
 
-Kerfloom separates frequently changing editable state from large immutable
+Kerfspan separates frequently changing editable state from large immutable
 binary assets:
 
 - `legacy-bundle-v1` remains readable and writable for rollback compatibility.

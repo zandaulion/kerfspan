@@ -189,7 +189,7 @@ export function initDatabase(db) {
   for (const device of orphanedDevices) {
     const workspaceId = crypto.randomUUID();
     db.prepare('INSERT INTO workspaces (id, label, created_at) VALUES (?, ?, ?)')
-      .run(workspaceId, device.label || 'Kerfloom workspace', device.created_at);
+      .run(workspaceId, device.label || 'Kerfspan workspace', device.created_at);
     db.prepare('UPDATE devices SET workspace_id = ? WHERE id = ?')
       .run(workspaceId, device.id);
   }

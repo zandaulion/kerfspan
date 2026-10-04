@@ -258,7 +258,7 @@ export class ProjectService {
         summary.removedOrphans += 1;
       } catch (error) {
         summary.warnings += 1;
-        this.warn('Kerfloom could not expire a legacy migration backup.', error);
+        this.warn('Kerfspan could not expire a legacy migration backup.', error);
       }
     }
 
@@ -282,7 +282,7 @@ export class ProjectService {
         summary.restoredLegacyFiles += 1;
       } catch (error) {
         summary.warnings += 1;
-        this.warn('Kerfloom could not recover a legacy project revision.', error);
+        this.warn('Kerfspan could not recover a legacy project revision.', error);
       }
     }
 
@@ -303,13 +303,13 @@ export class ProjectService {
         summary.removedOrphans += 1;
       } catch (error) {
         summary.warnings += 1;
-        this.warn('Kerfloom could not remove an unreferenced project file.', error);
+        this.warn('Kerfspan could not remove an unreferenced project file.', error);
       }
     }
     if (summary.removedOrphans > 0) {
       try { this.syncDirectory(); } catch (error) {
         summary.warnings += 1;
-        this.warn('Kerfloom could not flush project-storage cleanup metadata.', error);
+        this.warn('Kerfspan could not flush project-storage cleanup metadata.', error);
       }
     }
     return summary;
@@ -618,7 +618,7 @@ export class ProjectService {
         fs.rmSync(this.filePath(current.file_name), { force: true });
         this.syncDirectory();
       } catch (error) {
-        this.warn('Kerfloom committed a project revision but could not remove its predecessor.', error);
+        this.warn('Kerfspan committed a project revision but could not remove its predecessor.', error);
       }
     }
     return publicRow(this.row(workspaceId, clientId));
@@ -645,7 +645,7 @@ export class ProjectService {
         if (!sameHash(digest, row.bundle_sha256)) throw new Error('integrity check failed');
       } catch (error) {
         result.failed += 1;
-        this.warn('Kerfloom could not read a project during encryption migration.', error);
+        this.warn('Kerfspan could not read a project during encryption migration.', error);
         continue;
       }
 
@@ -683,12 +683,12 @@ export class ProjectService {
         }
         if (committed) {
           result.migrated += 1;
-          this.warn('Kerfloom migrated a project but the commit acknowledgement was interrupted.', error);
+          this.warn('Kerfspan migrated a project but the commit acknowledgement was interrupted.', error);
           continue;
         }
         if (published) fs.rmSync(this.filePath(fileName), { force: true });
         result.failed += 1;
-        this.warn('Kerfloom could not migrate a project encryption key.', error);
+        this.warn('Kerfspan could not migrate a project encryption key.', error);
         continue;
       }
 
@@ -697,7 +697,7 @@ export class ProjectService {
         fs.rmSync(this.filePath(row.file_name), { force: true });
         this.syncDirectory();
       } catch (error) {
-        this.warn('Kerfloom migrated a project but could not remove its old encrypted revision.', error);
+        this.warn('Kerfspan migrated a project but could not remove its old encrypted revision.', error);
       }
     }
     return result;
@@ -807,7 +807,7 @@ export class ProjectService {
       for (const fileName of backupFiles) fs.rmSync(this.filePath(fileName), { force: true });
       this.syncDirectory();
     } catch (error) {
-      this.warn('Kerfloom committed a project deletion but could not remove its bundle.', error);
+      this.warn('Kerfspan committed a project deletion but could not remove its bundle.', error);
     }
     return { id: clientId, deleted: true, revision, deletedAt };
   }

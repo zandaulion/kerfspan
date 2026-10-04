@@ -517,7 +517,7 @@ async function rebaseConflictCopy(operation, details) {
     return {
       status: 'conflict-queued',
       projectId: operation.projectId,
-      message: 'This conflict copy also changed elsewhere. It remains queued for review; Kerfloom will not create another copy.',
+      message: 'This conflict copy also changed elsewhere. It remains queued for review; Kerfspan will not create another copy.',
     };
   }
   const rebased = await putProjectSync({

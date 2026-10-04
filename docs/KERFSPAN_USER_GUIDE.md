@@ -1,14 +1,14 @@
-# Kerfloom user guide
+# Kerfspan user guide
 
-Kerfloom turns a photograph or prepared drawing into connected, manufacturing-aware geometry for CNC cutting. This guide describes the complete creative-to-CAM workflow, the meaning of the manufacturing checks, project synchronization, device linking, export, and recovery.
+Kerfspan turns a photograph or prepared drawing into connected, manufacturing-aware geometry for CNC cutting. This guide describes the complete creative-to-CAM workflow, the meaning of the manufacturing checks, project synchronization, device linking, export, and recovery.
 
 > **Scope of the checks**
 >
-> Kerfloom checks the geometry it can measure: connectivity, configured openings, finished metal widths, close cuts, and the selected panel construction. It does not certify material strength, machine setup, consumables, heat distortion, cut order, lead-ins, fixturing, or the safety of a finished installation. Treat **Ready for CAM review** as the start of operator review—not as “ready to cut.”
+> Kerfspan checks the geometry it can measure: connectivity, configured openings, finished metal widths, close cuts, and the selected panel construction. It does not certify material strength, machine setup, consumables, heat distortion, cut order, lead-ins, fixturing, or the safety of a finished installation. Treat **Ready for CAM review** as the start of operator review—not as “ready to cut.”
 
 ## 1. The working model
 
-Dark geometry is retained material. Light geometry is removed material. Kerfloom rebuilds the result from separate, reversible inputs:
+Dark geometry is retained material. Light geometry is removed material. Kerfspan rebuilds the result from separate, reversible inputs:
 
 1. the source image and tonal interpretation;
 2. the selected cut style and its controls;
@@ -17,7 +17,7 @@ Dark geometry is retained material. Light geometry is removed material. Kerfloom
 5. manual or accepted smart supports;
 6. an optional generated manufacturing-repair layer.
 
-This separation is why changing a photograph does not permanently bake in a repair and why an automatic repair can be reviewed or removed later. A change to an earlier dependency can make later validation or repairs stale; Kerfloom will ask for a fresh check rather than silently treating the old result as current.
+This separation is why changing a photograph does not permanently bake in a repair and why an automatic repair can be reviewed or removed later. A change to an earlier dependency can make later validation or repairs stale; Kerfspan will ask for a fresh check rather than silently treating the old result as current.
 
 ### Canvas views
 
@@ -47,7 +47,7 @@ Processing a style is not the same as validating it. The canvas distinguishes a 
 ### Source images
 
 - PNG, JPEG, and WebP are supported. HEIC/HEIF must be converted first.
-- Line art is thresholded locally in the browser. Photographic styles use Kerfloom's private analysis service.
+- Line art is thresholded locally in the browser. Photographic styles use Kerfspan's private analysis service.
 - **Remove background** isolates the detected subject. **Include clothing** keeps shoulders/body where supported by the style.
 - Use **Tone** to understand what the style receives. Fix the interpretation before trying to compensate with many manual edits.
 
@@ -70,7 +70,7 @@ Processing a style is not the same as validating it. The canvas distinguishes a 
 |  | **Variable dots** | Staggered circular openings sized by local light. |
 | Decorative | **Ornamental symmetry** | Mirrored linework for a balanced motif. |
 
-The recommendation panel converts the current panel size and manufacturing limits into an explicit starting point. If Kerfloom clamps a pitch, width, or diameter to preserve a configured limit, it explains the adjustment beside the affected control. Recommendations remain creative starting points, not machine certification.
+The recommendation panel converts the current panel size and manufacturing limits into an explicit starting point. If Kerfspan clamps a pitch, width, or diameter to preserve a configured limit, it explains the adjustment beside the affected control. Recommendations remain creative starting points, not machine certification.
 
 ### Tone adjustments
 
@@ -104,7 +104,7 @@ Candidates are creative checkpoints within the project. They preserve the style 
 
 ### Dimensions, orientation, and placement
 
-Set the real panel width and height before evaluating pitch, diameter, bridge width, or validation. Kerfloom preserves aspect ratio and does not intentionally stretch the source.
+Set the real panel width and height before evaluating pitch, diameter, bridge width, or validation. Kerfspan preserves aspect ratio and does not intentionally stretch the source.
 
 Use the artwork placement tool to:
 
@@ -131,7 +131,7 @@ A profile is **Provisional** until an operator records its evidence from machine
 
 ### Finished-edge CAM workflow
 
-New Kerfloom geometry describes intended finished-part edges. Apply inside/outside kerf compensation exactly once in CAM. Do not compensate a second time because a kerf value is also present in the Kerfloom profile; that value supports checking and traceability.
+New Kerfspan geometry describes intended finished-part edges. Apply inside/outside kerf compensation exactly once in CAM. Do not compensate a second time because a kerf value is also present in the Kerfspan profile; that value supports checking and traceability.
 
 ### Frame, anchors, and construction
 
@@ -151,7 +151,7 @@ An attractive cut pattern can still contain islands or very long unsupported sla
 - **Stabilize long slats** adds sparse cross-ties when the configured span is exceeded.
 - The aesthetic/secure strategy and organic variation change the balance between minimal structure and less-visible placement.
 
-If no feature-aligned safe position exists, Kerfloom may show a fallback for review or decline to place a bridge. That is safer than claiming a poor placement is invisible.
+If no feature-aligned safe position exists, Kerfspan may show a fallback for review or decline to place a bridge. That is safer than claiming a poor placement is invisible.
 
 ### Manual supports
 
@@ -171,7 +171,7 @@ Endpoints should overlap retained material enough to survive the selected kerf a
 
 **Add** paints retained material; **Remove** paints cut-out. The physical brush size follows panel units. Freehand strokes, straight strokes, and connected-region edits are available from the tool settings.
 
-A stroke may begin outside the visible sheet when the brush itself overlaps the panel; only the portion inside the panel changes geometry. One committed gesture creates one undo step. Enable the safety option when you want Kerfloom to report whether an edit leaves loose material.
+A stroke may begin outside the visible sheet when the brush itself overlaps the panel; only the portion inside the panel changes geometry. One committed gesture creates one undo step. Enable the safety option when you want Kerfspan to report whether an edit leaves loose material.
 
 Pan never edits geometry. Switch to **Pan** before navigating or using browser pinch zoom. Use Undo/Redo immediately when a gesture changes more than intended.
 
@@ -184,7 +184,7 @@ Validation examines the current combined geometry at the current physical scale.
 - **Blocking errors** — must be resolved before SVG/DXF export.
 - **Structural warnings** — advisory conditions that may benefit from strengthening or operator review.
 
-Select **Locate** or a finding row to focus it. Next cycles through the individual occurrences. Escape clears the current highlight. After a manual Add/Remove or support correction, Kerfloom refreshes the affected review queue automatically; you should not need to rebuild the entire workflow after every fix.
+Select **Locate** or a finding row to focus it. Next cycles through the individual occurrences. Escape clears the current highlight. After a manual Add/Remove or support correction, Kerfspan refreshes the affected review queue automatically; you should not need to rebuild the entire workflow after every fix.
 
 ### Common findings
 
@@ -202,7 +202,7 @@ Automatic repair is a previewable, reversible layer. Choose categories, build th
 
 Each attempt remains available as a report, including attempts where no safe change was kept. **Physical effect** shows metal added and removed, total artwork area changed, finished-piece connectivity, and the area/components that survive the configured full-width-core check. The cell dimensions and diagonal state the raster sampling uncertainty; they are not machine tolerances. **Why planning stopped** distinguishes a completed pass, a safe partial result, rejected unsafe proposals, and the support-tie safety limit, then suggests the relevant manual or pattern-level next action. Expand **Planner diagnostics** to see considered, kept, and rejected candidate counts without recording the source image.
 
-The preview records the exact cutting-profile revision, status, geometry interpretation, dimensions, limits, and validation-model version used to judge it. If one of those inputs changes, Kerfloom refuses to apply the old preview. Applied geometry is checked again under that same contract before it can participate in export readiness.
+The preview records the exact cutting-profile revision, status, geometry interpretation, dimensions, limits, and validation-model version used to judge it. If one of those inputs changes, Kerfspan refuses to apply the old preview. Applied geometry is checked again under that same contract before it can participate in export readiness.
 
 Manual corrections made after accepting repairs override only conflicting generated cells; unaffected automatic repairs stay active. Running checks again evaluates the combined result and does not, by itself, delete accepted repairs. Changing an upstream dependency—artwork, placement, panel geometry, polarity, or cutting limits—can invalidate that layer and require regeneration.
 
@@ -220,7 +220,7 @@ Processing failures stay visible with **Retry** and **Dismiss** instead of disap
 - Variable Dots retain true circle primitives in vector export when possible.
 - The canvas status and Export stage show the effective X/Y millimetres per raster cell. This is the grid from which ordinary contour edges are traced; extra coordinate decimals do not create finer source geometry.
 - **Simplify vector contours** is optional and off by default. When enabled, **Maximum boundary deviation** is a physical millimetre/inch limit for removing redundant polyline vertices; it is not coordinate rounding and does not create smooth splines.
-- Before a simplified SVG/DXF is written, Kerfloom verifies the deviation bound, closed-contour orientation, self/inter-contour intersections, nesting, and preserved-circle clearance. It then rasterizes the actual proposed vectors and re-runs the configured manufacturing checks. A new blocker, new warning type, or increased warning count triggers an automatic fallback to the exact raster contours.
+- Before a simplified SVG/DXF is written, Kerfspan verifies the deviation bound, closed-contour orientation, self/inter-contour intersections, nesting, and preserved-circle clearance. It then rasterizes the actual proposed vectors and re-runs the configured manufacturing checks. A new blocker, new warning type, or increased warning count triggers an automatic fallback to the exact raster contours.
 - The status below the control reports the nodes before/after and the applied safe tolerance, or explains why exact contours were used. The release manifest hashes the actual vectors and records the simplification and post-fit validation result.
 - Every newly retained PNG, SVG, and DXF includes an immutable release manifest in the encrypted project. It records hashes of the exact geometry and exported bytes, dimensions, units, cutting-profile snapshot, compensation contract, processing/validation versions, validation time and findings, and output identity. The manifest follows server sync and project sharing.
 - File names include the project, panel size, style, frame choice, purpose, and a timestamp.
@@ -234,7 +234,7 @@ The release record makes an export identifiable and tamper-evident; it is not a 
 
 Open **Projects** from the desktop header or mobile tool rail. The library appears immediately, saves the current edit to the device cache, and shows cached projects before it refreshes server changes in the background. You can keep using the cached library while that refresh runs, and an offline or slow server cannot block it from opening. Cards show the generated artwork preview, panel size, style, validation state, time, and source availability. You can open, rename, duplicate, download, share, or move a project to Trash. Trash remains recoverable until **Delete forever**.
 
-Kerfloom saves every edit to a local IndexedDB cache first, then uploads a complete encrypted project bundle through a durable queue. The status distinguishes:
+Kerfspan saves every edit to a local IndexedDB cache first, then uploads a complete encrypted project bundle through a durable queue. The status distinguishes:
 
 - **Saving…** — a local or server write is in progress;
 - **Saved to server** — the server acknowledged the current revision;
@@ -242,9 +242,9 @@ Kerfloom saves every edit to a local IndexedDB cache first, then uploads a compl
 - **Server sync failed — Tap Sync** — the queue still needs attention;
 - **Device storage full / local cache failed** — the latest edit may not be safely cached; stop and resolve this before closing.
 
-`Ctrl/Cmd+S` requests an immediate save. Kerfloom also keeps up to ten Recovery points after important milestones such as validation, repair, accepted smart supports, and export. Recovery points restore an earlier project state; Candidates compare creative alternatives.
+`Ctrl/Cmd+S` requests an immediate save. Kerfspan also keeps up to ten Recovery points after important milestones such as validation, repair, accepted smart supports, and export. Recovery points restore an earlier project state; Candidates compare creative alternatives.
 
-If concurrent edits cannot be reconciled, Kerfloom preserves work as a conflict copy rather than silently overwriting either version. Rename and compare the copies, then move the redundant one to Trash.
+If concurrent edits cannot be reconciled, Kerfspan preserves work as a conflict copy rather than silently overwriting either version. Rename and compare the copies, then move the redundant one to Trash.
 
 ## 10. Linked devices and project sharing
 
@@ -252,9 +252,24 @@ If concurrent edits cannot be reconciled, Kerfloom preserves work as a conflict 
 
 On an already linked device, open **Projects → Devices**, name the new device, and create a one-time link. Scan its QR code or send the link privately. Opening it on the phone/tablet/computer joins that browser to the same encrypted workspace, so both devices see the same project library after synchronization.
 
-The invitation expires, can be cancelled before use, and can be claimed once. If the receiving browser already belongs to another workspace, Kerfloom asks before replacing that connection. Confirm that the current device says **Saved to server** before moving to another device, and tap Sync on the destination if needed.
+The invitation expires, can be cancelled before use, and can be claimed once. If the receiving browser already belongs to another workspace, Kerfspan asks before replacing that connection. Confirm that the current device says **Saved to server** before moving to another device, and tap Sync on the destination if needed.
 
 The current device cannot accidentally revoke itself from the Devices screen. To move that browser to another workspace, open the new workspace's invitation and explicitly confirm the replacement. Do not clear site data until unsynced work is uploaded or downloaded as a project file; clearing storage removes the offline cache and queue.
+
+### Move from the former web address
+
+The canonical address is `https://kerfspan.com`. The former
+`https://kerfloom.zandaulion.com` address remains available as a compatibility
+alias, but browsers isolate secure cookies, installed PWAs, service workers,
+and IndexedDB by hostname.
+
+To connect the new address to the same workspace, first confirm **Saved to
+server** on the former address. Open **Projects → Devices**, create a one-time
+device invitation, replace only the hostname in its link with `kerfspan.com`,
+and open it in the destination browser. The code is valid on either address
+because both use the same server database. Server-synchronized projects will
+appear after linking; local-only work must be synchronized or downloaded before
+the move.
 
 ### Give someone an independent copy
 
@@ -268,11 +283,11 @@ On a narrow screen, the canvas stays fixed in the available viewport. Tap a numb
 
 ### Install the PWA
 
-- **Windows:** open Kerfloom in Microsoft Edge or Google Chrome and choose the install icon in the address bar. The same action is available from the browser's Apps / Install menu.
+- **Windows:** open Kerfspan in Microsoft Edge or Google Chrome and choose the install icon in the address bar. The same action is available from the browser's Apps / Install menu.
 - **Android:** open the browser menu and choose **Install app** or **Add to Home screen**.
-- **iPhone/iPad:** open Kerfloom in Safari, choose **Share**, then **Add to Home Screen**.
+- **iPhone/iPad:** open Kerfspan in Safari, choose **Share**, then **Add to Home Screen**.
 
-After a Kerfloom update, open the installed app while online and allow it to refresh before relying on offline use. The app avoids replacing active code in the middle of a busy edit.
+After a Kerfspan update, open the installed app while online and allow it to refresh before relying on offline use. The app avoids replacing active code in the middle of a busy edit.
 
 | Shortcut | Action |
 | --- | --- |
@@ -328,7 +343,7 @@ Import or generate geometry, run all checks, and resolve every blocking error. A
 
 ### The canvas seems lost or zoomed into the wrong place
 
-Select Pan and press **F** or the **Fit** button. For project thumbnails and identification, Kerfloom fits the entire generated panel rather than intentionally cropping to a detail.
+Select Pan and press **F** or the **Fit** button. For project thumbnails and identification, Kerfspan fits the entire generated panel rather than intentionally cropping to a detail.
 
 ### Smart support cannot find a placement
 
@@ -363,4 +378,4 @@ Before committing a panel to CAM:
 - **Repair layer** — reversible automatic additions/removals generated to address selected findings.
 - **Current validation** — checks performed on the exact geometry and profile now being exported.
 - **Provisional profile** — useful starting limits without recorded machine documentation or test evidence.
-- **Ready for CAM review** — Kerfloom found no blocking geometry errors; operator/CAM responsibilities remain.
+- **Ready for CAM review** — Kerfspan found no blocking geometry errors; operator/CAM responsibilities remain.

@@ -52,7 +52,7 @@ export function exportDxf(mask, sheet, options = {}) {
   pair(10, formatNumber(width, precision));
   pair(20, formatNumber(height, precision));
   pair(30, "0");
-  if (options.title) pair(999, `Kerfloom: ${asciiComment(options.title)}`);
+  if (options.title) pair(999, `Kerfspan: ${asciiComment(options.title)}`);
   pair(0, "ENDSEC");
 
   pair(0, "SECTION");

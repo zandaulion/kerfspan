@@ -17,13 +17,13 @@ const geometryWorker = fs.readFileSync(path.join(projectRoot, 'web/workers/geome
 const geometryJobsCore = fs.readFileSync(path.join(projectRoot, 'web/core/geometry-jobs.js'), 'utf8');
 const featureGuidance = fs.readFileSync(path.join(projectRoot, 'web/core/feature-guidance.js'), 'utf8');
 const releaseManifest = fs.readFileSync(path.join(projectRoot, 'web/core/release-manifest.js'), 'utf8');
-const userGuide = fs.readFileSync(path.join(projectRoot, 'docs/KERFLOOM_USER_GUIDE.md'), 'utf8');
+const userGuide = fs.readFileSync(path.join(projectRoot, 'docs/KERFSPAN_USER_GUIDE.md'), 'utf8');
 
-test('Kerfloom is the public brand while project compatibility remains stable', () => {
-  assert.match(html, /<title>Kerfloom — Art that holds together<\/title>/);
-  assert.match(html, /Kerfloom by Zandaulion/);
-  assert.match(html, /<strong>Kerfloom<\/strong>/);
-  assert.match(manifest, /"name": "Kerfloom"/);
+test('Kerfspan is the public brand while project compatibility remains stable', () => {
+  assert.match(html, /<title>Kerfspan — Art that holds together<\/title>/);
+  assert.match(html, /Kerfspan by Zandaulion/);
+  assert.match(html, /<strong>Kerfspan<\/strong>/);
+  assert.match(manifest, /"name": "Kerfspan"/);
   assert.match(html, /rel="icon" href="\/icons\/kerfloom-48\.png"/);
   assert.match(manifest, /"src": "\/icons\/kerfloom-48\.png"/);
   assert.match(manifest, /"src": "\/icons\/kerfloom-256\.png"/);
@@ -312,7 +312,7 @@ test('PNG previews remain available before validation and are visibly marked as 
   assert.match(editor, /pngButton\?\.toggleAttribute\('disabled', !hasGeometry\)/);
   assert.match(editor, /const mask = geometryForExport\(\)/);
   assert.match(editor, /const draft = kind === 'png' && !validated/);
-  assert.match(png, /KERFLOOM DRAFT · NOT VALIDATED FOR CUTTING/);
+  assert.match(png, /KERFSPAN DRAFT · NOT VALIDATED FOR CUTTING/);
   assert.match(editor, /filename = exportFilename\('png', undefined, \{ draft \}\)[\s\S]*blob = await pngBlob\(mask, \{ draft, exactCircleHoles: previewCircleHoles \}\)[\s\S]*downloadBlob\(filename, blob\)/);
   assert.match(editor, /purpose: projectFile \? 'editable' : kind === 'png' \? draft \? 'draft-preview' : 'preview' : 'cut'/);
   assert.match(editor, /if \(kind !== 'png' && !validated\)/);

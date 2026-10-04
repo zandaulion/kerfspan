@@ -1,6 +1,6 @@
-# Kerfloom backup and isolated restore
+# Kerfspan backup and isolated restore
 
-Kerfloom's canonical state is the complete `stencil-cnc-data` volume plus the
+Kerfspan's canonical state is the complete `stencil-cnc-data` volume plus the
 environment secrets that can decrypt it. A database-only or files-only copy is
 not a usable backup. Never print encryption keys into a log, shell history, or
 support ticket.
@@ -8,7 +8,7 @@ support ticket.
 ## Current evidence and objective
 
 Checked on 2026-09-16: the repository contains no backup automation, and no
-Kerfloom backup appeared in the deployment user's or host's systemd timers.
+Kerfspan backup appeared in the deployment user's or host's systemd timers.
 The active volume is `stencil-cnc-data`. External provider snapshots or other
 out-of-band backups remain unverified. Therefore the measured recovery point
 is currently **unknown/unbounded**, and the operational recovery time has not

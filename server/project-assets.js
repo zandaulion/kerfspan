@@ -300,7 +300,7 @@ export class ProjectAssetService {
         plain = this.read(row.workspace_id, row.id).buffer;
       } catch (error) {
         result.failed += 1;
-        try { this.onStorageWarning('Kerfloom could not read an asset during key migration.', error); } catch {}
+        try { this.onStorageWarning('Kerfspan could not read an asset during key migration.', error); } catch {}
         continue;
       }
       const fileName = `${row.id}.${crypto.randomUUID()}.asset`;
@@ -330,7 +330,7 @@ export class ProjectAssetService {
         } else {
           result.migrated += 1;
         }
-        try { this.onStorageWarning('Kerfloom could not migrate a project asset key.', error); } catch {}
+        try { this.onStorageWarning('Kerfspan could not migrate a project asset key.', error); } catch {}
       }
     }
     return result;
@@ -352,7 +352,7 @@ export class ProjectAssetService {
         summary.removedOrphans += 1;
       } catch (error) {
         summary.warnings += 1;
-        try { this.onStorageWarning('Kerfloom could not remove an orphaned project asset file.', error); } catch {}
+        try { this.onStorageWarning('Kerfspan could not remove an orphaned project asset file.', error); } catch {}
       }
     }
     return summary;
@@ -375,7 +375,7 @@ export class ProjectAssetService {
       `).run(row.id, row.id);
       if (result.changes !== 1) continue;
       try { fs.rmSync(this.filePath(row.file_name), { force: true }); } catch (error) {
-        try { this.onStorageWarning('Kerfloom could not remove an unreferenced project asset.', error); } catch {}
+        try { this.onStorageWarning('Kerfspan could not remove an unreferenced project asset.', error); } catch {}
       }
       removed += 1;
     }

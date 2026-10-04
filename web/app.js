@@ -105,7 +105,7 @@ function clearInviteFromUrl() {
 
 async function openEditor(device, { offline = false } = {}) {
   if (!device?.workspaceId) {
-    throw new Error('Reconnect once so Kerfloom can identify this device workspace.');
+    throw new Error('Reconnect once so Kerfspan can identify this device workspace.');
   }
   state.device = device || null;
   lockEditorViewport();
@@ -210,5 +210,5 @@ function wireGate() {
 }
 
 wireGate();
-installUpdates({ appName: 'Kerfloom', isBusy });
+installUpdates({ appName: 'Kerfspan', isBusy });
 checkAccess();

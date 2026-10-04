@@ -4,18 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#142129">
-  <meta name="description" content="Kerfloom turns line art and photographs into editable CNC stencil geometry with configurable manufacturing checks.">
+  <meta name="description" content="Kerfspan turns line art and photographs into editable CNC stencil geometry with configurable manufacturing checks.">
   <meta name="color-scheme" content="light">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Kerfloom">
+  <meta name="apple-mobile-web-app-title" content="Kerfspan">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/kerfloom-48.png" sizes="48x48" type="image/png">
   <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icons/kerfloom-192.png">
   <link rel="stylesheet" href="/app.css">
-  <title>Kerfloom — Art that holds together</title>
+  <title>Kerfspan — Art that holds together</title>
 </head>
 <body>
   <a class="skip-link" href="#workspace">Skip to editor</a>
@@ -29,11 +29,11 @@
           <path class="brand-bridge" d="M24 26h10v10H24z"></path>
         </svg>
       </div>
-      <p class="gate-eyebrow">Kerfloom by Zandaulion</p>
+      <p class="gate-eyebrow">Kerfspan by Zandaulion</p>
       <h1 id="gate-title">Art that<br>holds together.</h1>
-      <p class="gate-intro">Kerfloom turns photographs and line art into connected, cut-ready panels.</p>
+      <p class="gate-intro">Kerfspan turns photographs and line art into connected, cut-ready panels.</p>
 
-      <p class="gate-error" id="gate-insecure" role="alert" hidden>Kerfloom needs a secure connection. Open it as <strong>https://</strong>, or as <strong>http://localhost</strong> on the computer that runs it. Over plain HTTP from another device, the browser withholds what Kerfloom uses to sign in, save, and work offline.</p>
+      <p class="gate-error" id="gate-insecure" role="alert" hidden>Kerfspan needs a secure connection. Open it as <strong>https://</strong>, or as <strong>http://localhost</strong> on the computer that runs it. Over plain HTTP from another device, the browser withholds what Kerfspan uses to sign in, save, and work offline.</p>
       <form class="gate-form" id="gate-form" novalidate>
         <label for="invite-code-input">Invite code</label>
         <div class="invite-field">
@@ -50,7 +50,7 @@
 
         <p class="gate-error" id="gate-error" role="alert" hidden></p>
         <button class="button button-primary gate-submit" id="gate-submit" type="submit">
-          <span>Open Kerfloom</span>
+          <span>Open Kerfspan</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
         </button>
         <button class="button button-quiet gate-cancel-relink" id="btn-cancel-relink" type="button" hidden>Keep current workspace</button>
@@ -94,14 +94,14 @@
   <div id="app-main" hidden>
   <div class="app-shell" id="app">
     <header class="app-header">
-      <a class="brand" href="/" aria-label="Kerfloom home">
+      <a class="brand" href="/" aria-label="Kerfspan home">
         <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
           <rect x="3" y="3" width="42" height="42" rx="12"></rect>
           <path d="M13 11h8v9l9-9h10L28 24l13 13H30l-9-10v10h-8z"></path>
           <path class="brand-bridge" d="M19 20h8v8h-8z"></path>
         </svg>
         <span class="brand-copy">
-          <strong>Kerfloom</strong>
+          <strong>Kerfspan</strong>
           <span>Connected stencil design</span>
         </span>
       </a>
@@ -121,7 +121,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"></path><path d="M3 7V5h7l2 2"></path></svg>
           <span>Projects</span>
         </button>
-        <button class="button button-quiet help-label" id="btn-help" type="button" aria-label="Open Kerfloom handbook" aria-haspopup="dialog" aria-controls="help-dialog" title="Help">
+        <button class="button button-quiet help-label" id="btn-help" type="button" aria-label="Open Kerfspan handbook" aria-haspopup="dialog" aria-controls="help-dialog" title="Help">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.8 9a2.3 2.3 0 1 1 3.8 1.8c-1 .7-1.6 1.1-1.6 2.3M12 17h.01"></path></svg>
           <span>Help</span>
         </button>
@@ -203,7 +203,7 @@
                 <span class="upload-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24"><path d="M12 16V5m0 0L8 9m4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"></path></svg>
                 </span>
-                <span><strong>Drop an image here</strong><small>PNG, JPG, WebP, or a Kerfloom project · convert HEIC/HEIF first</small></span>
+                <span><strong>Drop an image here</strong><small>PNG, JPG, WebP, or a Kerfspan project · convert HEIC/HEIF first</small></span>
               </label>
               <div class="source-file" id="source-file" hidden>
                 <img id="source-preview" alt="Imported source preview">
@@ -628,7 +628,7 @@
                   <h3>Image interpretation <small>Automatic</small></h3>
                   <button class="text-button" id="btn-reset-photo-interpretation" type="button">Reset</button>
                 </div>
-                <p class="section-help image-interpretation-help">Kerfloom first identifies light, midtone, shadow, and subject shape. Inspect that result in the Tone view before choosing how the cut pattern expresses it.</p>
+                <p class="section-help image-interpretation-help">Kerfspan first identifies light, midtone, shadow, and subject shape. Inspect that result in the Tone view before choosing how the cut pattern expresses it.</p>
                 <button class="button button-secondary tone-adjustment-button" id="btn-open-tone-adjustments" type="button">Adjust tone</button>
                 <aside class="tone-inspector tone-inspector-panel" id="tone-inspector" aria-label="Tone interpretation" hidden>
                   <div><small id="tone-inspector-copy">The actual tonal field used before the cut pattern.</small></div>
@@ -886,7 +886,7 @@
                       <option value="custom">Custom assumptions</option>
                       <option value="machine-documentation">Machine documentation</option>
                       <option value="shop-test">Shop test coupon</option>
-                      <option value="kerfloom-default" disabled>Kerfloom starting point</option>
+                      <option value="kerfloom-default" disabled>Kerfspan starting point</option>
                       <option value="legacy-project" disabled>Migrated project values</option>
                     </select>
                   </label>
@@ -1715,7 +1715,7 @@
         <p class="device-invite-progress" id="device-invite-progress" role="status" hidden></p>
         <section class="device-invite-result" id="device-invite-result" aria-labelledby="device-invite-result-title" hidden>
           <div class="device-invite-qr-wrap">
-            <img id="device-invite-qr" alt="QR code for the one-time Kerfloom device invitation">
+            <img id="device-invite-qr" alt="QR code for the one-time Kerfspan device invitation">
           </div>
           <div class="device-invite-details">
             <strong id="device-invite-result-title">Invitation ready</strong>
@@ -1757,7 +1757,7 @@
   <dialog class="app-dialog version-dialog" id="version-dialog" aria-labelledby="version-dialog-title">
     <form method="dialog">
       <h2 id="version-dialog-title">Recovery points</h2>
-      <p>Kerfloom keeps up to ten checkpoints created after validation, repair, accepted smart-support changes, and export.</p>
+      <p>Kerfspan keeps up to ten checkpoints created after validation, repair, accepted smart-support changes, and export.</p>
       <ol class="version-list" id="version-list"></ol>
       <div class="dialog-actions">
         <button class="button button-quiet" value="cancel">Close</button>
@@ -1824,7 +1824,7 @@
     <section class="help-shell">
       <header class="help-header">
         <div>
-          <span class="eyebrow">Kerfloom handbook</span>
+          <span class="eyebrow">Kerfspan handbook</span>
           <h2 id="help-title">Create freely. Manufacture deliberately.</h2>
         </div>
         <button class="icon-button" id="btn-close-help" type="button" aria-label="Close help" title="Close help">
@@ -1859,7 +1859,7 @@
         <article class="help-section" id="help-section-start" data-help-section="start">
           <span class="help-kicker">Start here</span>
           <h3 tabindex="-1">From image to CAM without losing the idea</h3>
-          <p>Kerfloom keeps creative interpretation and CNC constraints in one reversible workflow. Dark geometry is retained metal; light geometry is removed. Work from broad intent toward physical detail:</p>
+          <p>Kerfspan keeps creative interpretation and CNC constraints in one reversible workflow. Dark geometry is retained metal; light geometry is removed. Work from broad intent toward physical detail:</p>
           <ol class="help-steps">
             <li><strong>Prepare</strong><span>Import, inspect Tone, choose a style, and save promising Candidates.</span></li>
             <li><strong>Panel</strong><span>Set the real sheet, place the artwork, and confirm the cutting profile.</span></li>
@@ -1867,7 +1867,7 @@
             <li><strong>Validate</strong><span>Locate blockers, preview reversible repairs, and finish manual corrections.</span></li>
             <li><strong>Export</strong><span>Review scale and responsibility, then hand SVG/DXF to CAM.</span></li>
           </ol>
-          <div class="help-callout"><strong>What Kerfloom can promise</strong><p>It checks measurable geometry against your selected profile. “Ready for CAM review” does not certify material strength, machine setup, heat behavior, cut order, fixturing, or installation safety.</p></div>
+          <div class="help-callout"><strong>What Kerfspan can promise</strong><p>It checks measurable geometry against your selected profile. “Ready for CAM review” does not certify material strength, machine setup, heat behavior, cut order, fixturing, or installation safety.</p></div>
           <h4>Read the canvas</h4>
           <dl class="help-definition-grid">
             <div><dt>Original</dt><dd>Imported source and composition.</dd></div>
@@ -1882,7 +1882,7 @@
         <article class="help-section" id="help-section-prepare" data-help-section="prepare" hidden>
           <span class="help-kicker">Step 1 · Prepare</span>
           <h3 tabindex="-1">Build the visual language first</h3>
-          <p>Import PNG, JPEG, or WebP. Convert HEIC/HEIF first. Line art is thresholded locally; photographic styles use Kerfloom’s private analysis service. Inspect <strong>Tone</strong> before compensating with manual edits.</p>
+          <p>Import PNG, JPEG, or WebP. Convert HEIC/HEIF first. Line art is thresholded locally; photographic styles use Kerfspan’s private analysis service. Inspect <strong>Tone</strong> before compensating with manual edits.</p>
           <h4>Image interpretation</h4>
           <p>Brightness and contrast set the overall range. Shadow detail controls dark information, surface smoothing suppresses texture, and tone separation strengthens light/midtone/shadow groups. The percentages describe the interpreted source, not final material coverage.</p>
           <h4>Choose a style by intent</h4>
@@ -1912,7 +1912,7 @@
             <div><dt>Verified</dt><dd>Material, thickness, machine, source, evidence, verifier, and date are recorded.</dd></div>
           </dl>
           <p>The General plasma starting point uses a conservative 3 mm finished web and 2 mm opening. A 2 mm web can be explored, but must be confirmed for the actual process. Each project and retained export carries its exact profile snapshot.</p>
-          <div class="help-callout"><strong>Finished-edge workflow</strong><p>Kerfloom exports intended finished-part edges. Apply inside/outside kerf compensation exactly once in CAM. The profile kerf value supports checking; it is not permission to compensate twice.</p></div>
+          <div class="help-callout"><strong>Finished-edge workflow</strong><p>Kerfspan exports intended finished-part edges. Apply inside/outside kerf compensation exactly once in CAM. The profile kerf value supports checking; it is not permission to compensate twice.</p></div>
           <h4>Frame, anchors, and construction</h4>
           <p>The frame is retained material around the artwork. Anchor edges identify allowed structural attachment. In One-piece panel construction, all retained regions must connect to the main panel or selected anchors.</p>
         </article>
@@ -1921,7 +1921,7 @@
           <span class="help-kicker">Step 3 · Support</span>
           <h3 tabindex="-1">Connect the panel with the least visual cost</h3>
           <p><strong>Suggest smart supports</strong> creates a dashed proposal. Review it before accepting. Protect important detail avoids central/high-contrast features; Follow features prefers hair, brows, folds, shadows, and other darker structures. Filter direction aligns ties to Slats, Hatch, or Radial cuts, while long-slat stabilization controls unsupported span.</p>
-          <p>If no feature-aligned safe position exists, Kerfloom may offer a visible fallback or place nothing. Add a manual support instead of forcing an unsafe or destructive suggestion.</p>
+          <p>If no feature-aligned safe position exists, Kerfspan may offer a visible fallback or place nothing. Add a manual support instead of forcing an unsafe or destructive suggestion.</p>
           <h4>Manual support controls</h4>
           <ul>
             <li>Drag or tap start/end to create a support.</li>
@@ -1961,7 +1961,7 @@
             <li><strong>PNG</strong> is available when geometry exists and is watermarked if validation is missing, stale, or blocking.</li>
             <li><strong>SVG/DXF</strong> require current validation with zero blockers and preserve true panel scale in the chosen units.</li>
             <li>Variable Dots preserve circle primitives in vector export when possible.</li>
-            <li>Optional vector simplification reduces polyline nodes within a physical deviation limit. Kerfloom checks deviation, intersections, nesting, topology, and a rasterized manufacturing result; any regression automatically falls back to the exact raster trace.</li>
+            <li>Optional vector simplification reduces polyline nodes within a physical deviation limit. Kerfspan checks deviation, intersections, nesting, topology, and a rasterized manufacturing result; any regression automatically falls back to the exact raster trace.</li>
             <li>The status bar and Export stage report the real X/Y millimetres per raster cell. Coordinate decimals do not create finer source geometry.</li>
             <li>Every newly retained export carries a tamper-evident release manifest with exact geometry/file hashes, profile, units, compensation contract, processing versions, and validation findings. It follows encrypted sync and sharing.</li>
             <li>Names include project, panel, style, frame, purpose, and timestamp.</li>
@@ -2003,7 +2003,7 @@
           <h3 tabindex="-1">Keep the canvas in reach</h3>
           <p>On narrow screens the canvas stays fixed. Tap a numbered stage to open controls as a bottom sheet, close it to inspect the result, and use Candidates/Problems for review. The bottom rail scrolls horizontally and retains Projects, Sync, Undo/Redo, and tools.</p>
           <h4>Install the app</h4>
-          <p>On Windows, open Kerfloom in Edge or Chrome and choose the install icon in the address bar (or the browser’s Apps / Install menu). On Android, choose Install app or Add to Home screen. On iPhone/iPad, open Kerfloom in Safari, use Share, then Add to Home Screen. Open the installed app online once after an update so its PWA files and workspace state can refresh.</p>
+          <p>On Windows, open Kerfspan in Edge or Chrome and choose the install icon in the address bar (or the browser’s Apps / Install menu). On Android, choose Install app or Add to Home screen. On iPhone/iPad, open Kerfspan in Safari, use Share, then Add to Home Screen. Open the installed app online once after an update so its PWA files and workspace state can refresh.</p>
           <h4>Keyboard reference</h4>
           <table class="help-shortcuts"><thead><tr><th>Keys</th><th>Action</th></tr></thead><tbody>
             <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd></td><td>Save/sync now</td></tr>
@@ -2024,13 +2024,13 @@
           <h3 tabindex="-1">Understand the boundary of the system</h3>
           <ul>
             <li>Complete project and share bundles are encrypted at rest on the server.</li>
-            <li>Photographic styles send the source to Kerfloom’s private analysis service.</li>
+            <li>Photographic styles send the source to Kerfspan’s private analysis service.</li>
             <li>Linked browsers use a secure HttpOnly device credential and retain an offline project cache.</li>
             <li>Device/share secrets use the URL fragment rather than an ordinary request path or query.</li>
             <li>Revocation blocks future server access but cannot remotely erase data already cached on an offline device.</li>
           </ul>
           <p>Protect the operating-system account, use HTTPS, send invitations privately, revoke lost devices from another linked device, and avoid shared browser profiles for sensitive artwork.</p>
-          <div class="help-callout"><strong>Operator responsibility</strong><p>Kerfloom does not model stock defects, mechanical loading, consumable condition, gas/air quality, thermal distortion, lead-ins, sequencing, fixturing, or safe machine operation. Verify those in CAM and at the machine.</p></div>
+          <div class="help-callout"><strong>Operator responsibility</strong><p>Kerfspan does not model stock defects, mechanical loading, consumable condition, gas/air quality, thermal distortion, lead-ins, sequencing, fixturing, or safe machine operation. Verify those in CAM and at the machine.</p></div>
         </article>
 
         <article class="help-section" id="help-section-troubleshooting" data-help-section="troubleshooting" hidden>
@@ -2048,7 +2048,7 @@
         <article class="help-section" id="help-section-performance" data-help-section="performance" hidden>
           <span class="help-kicker">Processing performance</span>
           <h3 tabindex="-1">Measure this device without exposing artwork</h3>
-          <p>Kerfloom records the latest elapsed times for rendering, geometry checks, repair planning, smart supports, and saving in this browser. Only task names, durations, outcome, device layout, and timestamps are stored—never image pixels or geometry.</p>
+          <p>Kerfspan records the latest elapsed times for rendering, geometry checks, repair planning, smart supports, and saving in this browser. Only task names, durations, outcome, device layout, and timestamps are stored—never image pixels or geometry.</p>
           <dl class="help-definition-grid" id="processing-metrics-list">
             <div><dt>No measurements yet</dt><dd>Run a render, check, repair, support plan, or save on this device.</dd></div>
           </dl>
@@ -2064,7 +2064,7 @@
       </main>
 
       <footer class="help-footer">
-        <span>Searchable handbook · bundled with Kerfloom</span>
+        <span>Searchable handbook · bundled with Kerfspan</span>
         <button class="button button-secondary" id="btn-help-back" type="button">Close handbook</button>
       </footer>
     </section>

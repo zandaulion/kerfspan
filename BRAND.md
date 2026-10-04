@@ -1,17 +1,17 @@
-# Kerfloom brand guide
+# Kerfspan brand guide
 
 ## Brand core
 
-- **Product name:** Kerfloom
-- **Portfolio signature:** Kerfloom by Zandaulion
+- **Product name:** Kerfspan
+- **Portfolio signature:** Kerfspan by Zandaulion
 - **Descriptor:** Connected stencil design for CNC
 - **Tagline:** Art that holds together.
 - **Plain-language promise:** Turn photographs and line art into connected, cut-ready panels.
 
-Kerfloom combines *kerf*, the material removed by a cutting tool, with *loom*, a
-system that weaves separate elements into one structure. The name reflects the
-product's central job: preserving the image while ensuring every retained piece
-belongs to a manufacturable panel.
+Kerfspan combines *kerf*, the material removed by a cutting tool, with *span*: a
+bridge across an opening, and the distance a panel must carry without losing
+integrity. The name reflects the product's central job—spanning the gap between
+visual intent and connected, manufacturable geometry.
 
 ## Visual language
 
@@ -30,7 +30,7 @@ safe or verified structural intervention.
 
 ## Voice
 
-Kerfloom speaks like a careful fabricator: direct, calm, specific, and honest
+Kerfspan speaks like a careful fabricator: direct, calm, specific, and honest
 about constraints. Prefer verbs such as *prepare*, *connect*, *check*, *repair*,
 and *export*. Avoid vague claims about AI or one-click perfection.
 
@@ -40,4 +40,4 @@ The public brand may change independently from the existing technical identity.
 Keep `stencil-cnc.project`, share-bundle MIME types, IndexedDB names, cookies,
 API routes, container names, and service paths stable unless a dedicated data
 migration is released. This lets projects, installed devices, and private share
-links created before the Kerfloom rename continue to work.
+links created under the previous Kerfloom name continue to work.

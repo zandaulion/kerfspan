@@ -4229,7 +4229,7 @@ function reportStorageFailure(error, { projectCached = false } = {}) {
   );
   toast(projectCached
     ? 'The project is cached, but its server queue needs more device space. Free space, then tap Sync.'
-    : 'The latest edit is still open but could not be cached. Free device space, then tap Sync before closing Kerfloom.');
+    : 'The latest edit is still open but could not be cached. Free device space, then tap Sync before closing Kerfspan.');
   return true;
 }
 
@@ -4781,7 +4781,7 @@ async function manuallySyncProjects() {
   } else if (result.status === 'queued') {
     toast(`${result.queued} ${result.queued === 1 ? 'change is' : 'changes are'} waiting for the server.`);
   } else if (result.status === 'retrying') {
-    toast('The server is not reachable yet. Kerfloom will retry automatically.');
+    toast('The server is not reachable yet. Kerfspan will retry automatically.');
   } else if (result.status === 'partial') {
     // syncWorkspaceProjects already names the affected project and whether the
     // open project itself is safe; avoid replacing that useful detail here.
@@ -6215,10 +6215,10 @@ async function importProjectFile(file) {
     await loadProjectState(project, { imported: true });
     pushHistory();
     markDirty();
-    toast('Editable Kerfloom project opened as a new local copy.');
+    toast('Editable Kerfspan project opened as a new local copy.');
   } catch (error) {
     console.error(error);
-    toast('That Kerfloom project could not be read.');
+    toast('That Kerfspan project could not be read.');
   }
 }
 
@@ -9300,8 +9300,8 @@ function wire() {
     if (!deviceManagerInvite?.link || typeof navigator.share !== 'function') return;
     try {
       await navigator.share({
-        title: 'Link a device to Kerfloom',
-        text: `Open this one-time link to join my Kerfloom workspace as “${deviceManagerInvite.label || 'Linked device'}”.`,
+        title: 'Link a device to Kerfspan',
+        text: `Open this one-time link to join my Kerfspan workspace as “${deviceManagerInvite.label || 'Linked device'}”.`,
         url: deviceManagerInvite.link,
       });
     } catch (error) {

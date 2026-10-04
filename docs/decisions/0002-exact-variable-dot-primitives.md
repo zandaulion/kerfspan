@@ -3,7 +3,7 @@
 ## Decision
 
 Variable Dots are generated as physical circles with continuous centres and
-radii. Kerfloom stores those primitives alongside the binary manufacturing
+radii. Kerfspan stores those primitives alongside the binary manufacturing
 raster in source-normalized coordinates.
 
 The raster remains the conservative input for connectivity, minimum-web, and

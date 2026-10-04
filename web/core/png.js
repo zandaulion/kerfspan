@@ -1,6 +1,6 @@
 import { RETAINED, assertMask } from './mask.js';
 
-export const DRAFT_WATERMARK_LABEL = 'KERFLOOM DRAFT · NOT VALIDATED FOR CUTTING';
+export const DRAFT_WATERMARK_LABEL = 'KERFSPAN DRAFT · NOT VALIDATED FOR CUTTING';
 
 /**
  * Converts manufacturing geometry into an opaque, shareable black-and-white

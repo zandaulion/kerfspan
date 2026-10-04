@@ -28,7 +28,7 @@ fs.writeFileSync(path.join(webDirectory, 'sw.js'), "const C='__BUILD_VERSION__';
 const db = initDatabase(new DatabaseSync(':memory:'));
 const auth = new AuthService(db, {
   adminToken: 'test-admin-token-that-is-not-secret',
-  publicBaseUrl: 'https://kerfloom.example.com'
+  publicBaseUrl: 'https://kerfspan.example.com'
 });
 const shareDirectory = path.join(temporaryRoot, 'shares');
 const projectDirectory = path.join(temporaryRoot, 'projects');
@@ -562,7 +562,7 @@ test('deployment files preserve the rootless and proxy boundaries', () => {
   assert.match(quadlet, /PublishPort=127\.0\.0\.1:8101:3000/);
   assert.match(quadlet, /NoNewPrivileges=true/);
   assert.match(quadlet, /DropCapability=all/i);
-  assert.match(caddy, /kerfloom\.example\.com/);
+  assert.match(caddy, /kerfspan\.example\.com/);
   assert.match(caddy, /respond @stencil_admin 404/);
   assert.match(caddy, /header_up -X-Admin-Token/);
   assert.match(caddy, /header_up X-Admin-Token \{\$STENCIL_CNC_ADMIN_TOKEN\}/);

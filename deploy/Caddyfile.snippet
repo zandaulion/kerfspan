@@ -1,5 +1,5 @@
-# An example for running Kerfloom behind Caddy and an outbound tunnel:
-#   kerfloom.example.com -> Cloudflare Tunnel -> 127.0.0.1:8017 -> 127.0.0.1:8101
+# An example for running Kerfspan behind Caddy and an outbound tunnel:
+#   kerfspan.example.com -> Cloudflare Tunnel -> 127.0.0.1:8017 -> 127.0.0.1:8101
 # Change 8017 here and in the tunnel ingress if that listener is allocated.
 # TLS terminates at the tunnel; this listener is loopback-only plain HTTP.
 # Without a tunnel, give Caddy the hostname instead and let it obtain TLS.

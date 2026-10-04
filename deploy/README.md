@@ -8,8 +8,14 @@ Express serves the PWA and invite API from container port 3000 and proxies
 photograph conversion to the unexposed analysis container. The web Quadlet is
 published only on `127.0.0.1:8101`. Caddy is the sole origin; in the example
 setup, an outbound Cloudflare Tunnel reaches a separate loopback-only Caddy
-listener for `kerfloom.example.com`. The containers and their data volume keep
+listener for `kerfspan.example.com`. The containers and their data volume keep
 their original `stencil-cnc` names so existing installations upgrade in place.
+
+The maintained deployment uses `https://kerfspan.com` as `PUBLIC_BASE_URL` and
+retains `kerfloom.zandaulion.com` as a second Tunnel ingress to the same Caddy
+listener. Keep the canonical hostname in `PUBLIC_BASE_URL` so newly generated
+admin invitations use it. Additional aliases do not share browser cookies or
+offline storage; each hostname must be linked as a device independently.
 
 ## First installation
 
@@ -25,9 +31,10 @@ their original `stencil-cnc` names so existing installations upgrade in place.
    HTTP port if 8017 is already allocated and set `STENCIL_CNC_CADDY_PORT` for
    Caddy.
 4. Point your hostname at that listener: for example, a Cloudflare Tunnel
-   ingress mapping `kerfloom.example.com` to `http://127.0.0.1:8017` (or the
+   ingress mapping `kerfspan.example.com` to `http://127.0.0.1:8017` (or the
    selected Caddy port). A tunnel is outbound; do not publish 8101 in the
    firewall.
+   Set `PUBLIC_BASE_URL=https://kerfspan.example.com` in the application env.
 5. Validate and reload Caddy, then run `./deploy.sh` again. It runs the test
    suite, builds the image, installs the user Quadlet, restarts it, and waits
    for `/api/health`.
@@ -55,7 +62,7 @@ Normal editing uses encrypted server state under `/data/projects`, immutable
 source/export bytes under `/data/project-assets`, and metadata/references in
 `/data/stencil-cnc.db`. `PROJECT_ENCRYPTION_KEY` should be a stable
 32-byte hexadecimal secret generated with `openssl rand -hex 32`. If it is
-blank, Kerfloom derives a separate domain key from `SHARE_ENCRYPTION_KEY` or
+blank, Kerfspan derives a separate domain key from `SHARE_ENCRYPTION_KEY` or
 `ADMIN_TOKEN`. Rotating the active source key without re-encrypting stored
 bundles makes those bundles unreadable.
 
@@ -82,10 +89,10 @@ same functions a web interface; it needs an entry like this in its
 ```json
 {
   "id": "kerfloom",
-  "name": "Kerfloom",
+  "name": "Kerfspan",
   "api": "/stencil-cnc",
   "push": false,
-  "message": "Here is your access to Kerfloom.\\n\\nOpen the link:\\n{link}\\n\\nThe code is valid for {days} days and registers one device."
+  "message": "Here is your access to Kerfspan.\\n\\nOpen the link:\\n{link}\\n\\nThe code is valid for {days} days and registers one device."
 }
 ```
 

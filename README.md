@@ -1,14 +1,18 @@
-# Kerfloom
+# Kerfspan
 
 **Art that holds together.**
 
-Kerfloom turns photographs and prepared artwork into connected, manufacturing-aware geometry for CNC plasma cutting. It combines creative image treatments with panel layout, support design, physical validation, manual touch-ups, server-backed project management, and export in one installable web application.
+Kerfspan turns photographs and prepared artwork into connected, manufacturing-aware geometry for CNC plasma cutting. It combines creative image treatments with panel layout, support design, physical validation, manual touch-ups, server-backed project management, and export in one installable web application.
+
+The maintained deployment is [kerfspan.com](https://kerfspan.com). It requires
+an invitation. The former `kerfloom.zandaulion.com` address remains an active
+compatibility alias during the transition.
 
 The central rule is simple: dark geometry represents retained metal and light geometry represents material to remove. The editor keeps the source treatment, structural frame, supports, manual edits, and automatic manufacturing repairs as separate inputs so the final panel can be rebuilt and checked consistently.
 
-Kerfloom is a fabrication aid, not a machine-safety certificate. **Ready for CAM review** means that the current geometry passed Kerfloom's configured checks; the operator must still verify the material, machine, consumables, compensation, lead-ins, cut order, fixturing, heat behavior, and final use.
+Kerfspan is a fabrication aid, not a machine-safety certificate. **Ready for CAM review** means that the current geometry passed Kerfspan's configured checks; the operator must still verify the material, machine, consumables, compensation, lead-ins, cut order, fixturing, heat behavior, and final use.
 
-![Kerfloom turning a portrait into an icon-stencil panel, shown back-lit as it would glow when cut](docs/screenshots/03-icon-stencil-backlit.png)
+![Kerfspan turning a portrait into an icon-stencil panel, shown back-lit as it would glow when cut](docs/screenshots/03-icon-stencil-backlit.png)
 
 | | | |
 |---|---|---|
@@ -39,10 +43,10 @@ Open the link `admin.sh` prints (or http://localhost:3000) and redeem the
 one-time code. Every browser needs its own invite, or a device link from
 **Projects → Devices** in a browser that is already signed in.
 
-**Using it from other devices.** Kerfloom needs a secure context: `https://`, or
+**Using it from other devices.** Kerfspan needs a secure context: `https://`, or
 `http://localhost` on the machine that runs it. Over plain HTTP from another
 device the browser withholds the cookie, offline storage and Web Crypto that
-Kerfloom depends on, so the sign-in page says so and stops. Put it behind a
+Kerfspan depends on, so the sign-in page says so and stops. Put it behind a
 reverse proxy that terminates TLS (the [Caddy example](deploy/Caddyfile.snippet)
 works), or use something like `tailscale serve`, and set `PUBLIC_BASE_URL` to
 that address so invite links point there. Only behind such a proxy, set
@@ -55,7 +59,7 @@ Data lives in the `kerfloom-data` volume. `docker compose down` keeps it;
 
 ## Documentation
 
-Select **Help** in the Kerfloom header for the searchable, mobile-responsive handbook; the question-mark button in each workflow stage opens it at the relevant chapter. Its source is [`docs/KERFLOOM_USER_GUIDE.md`](docs/KERFLOOM_USER_GUIDE.md). Design notes and the development history are listed under [Project documents](#project-documents).
+Select **Help** in the Kerfspan header for the searchable, mobile-responsive handbook; the question-mark button in each workflow stage opens it at the relevant chapter. Its source is [`docs/KERFSPAN_USER_GUIDE.md`](docs/KERFSPAN_USER_GUIDE.md). Design notes and the development history are listed under [Project documents](#project-documents).
 
 ## What it does
 
@@ -96,15 +100,22 @@ Select **Help** in the Kerfloom header for the searchable, mobile-responsive han
 2. **Panel** — set stock dimensions and orientation, position/rotate/scale the artwork, configure frame and anchor edges, and choose the versioned plasma constraints used by generation, validation, and export.
 3. **Support** — inspect connectivity, preview and accept smart bridges, or create supports by dragging or tapping start/end points. A keyboard-accessible list can select, locate, move numerically, rotate, resize, or delete each support; Pan never edits geometry.
 4. **Validate** — run the deliberate full check, compare pre- and post-kerf geometry, locate individual problems, and preview reversible manufacturing repairs. During explicit problem-by-problem review, a manual correction can recheck the selected issue without discarding accepted automatic repairs. Escape clears the current problem selection.
-5. **Export** — download validated SVG/DXF cutting geometry, a validated or visibly watermarked draft PNG, or a portable Kerfloom project. Exports use descriptive filenames with the project, panel size, style, frame choice, purpose, and timestamp.
+5. **Export** — download validated SVG/DXF cutting geometry, a validated or visibly watermarked draft PNG, or a portable Kerfspan project. Exports use descriptive filenames with the project, panel size, style, frame choice, purpose, and timestamp.
 
 ## Access, installation, and offline use
 
-Kerfloom is device-gated. A new browser first needs a one-time invite code from the administrator or a device-link invitation from an already authorised workspace device.
+Kerfspan is device-gated. A new browser first needs a one-time invite code from the administrator or a device-link invitation from an already authorised workspace device.
 
-- **Windows:** open Kerfloom in Microsoft Edge or Google Chrome and select the install icon in the address bar, or use the browser's **Apps / Install** menu.
-- **Android:** open Kerfloom in Chrome and choose **Install app** or **Add to Home screen**.
-- **iPhone/iPad:** open Kerfloom in Safari, use **Share**, then choose **Add to Home Screen**.
+Browser credentials, installed-PWA state, and offline storage are isolated by
+hostname. Before moving an existing browser to `kerfspan.com`, confirm it says
+**Saved to server** on the former address. Then create a one-time invitation in
+**Projects → Devices**, replace only the old hostname in that invitation with
+`kerfspan.com`, and open it. The invitation code and server workspace are shared;
+the secure browser cookie and local cache are not.
+
+- **Windows:** open Kerfspan in Microsoft Edge or Google Chrome and select the install icon in the address bar, or use the browser's **Apps / Install** menu.
+- **Android:** open Kerfspan in Chrome and choose **Install app** or **Add to Home screen**.
+- **iPhone/iPad:** open Kerfspan in Safari, use **Share**, then choose **Add to Home Screen**.
 - **Another personal device:** open **Projects → Devices**, name the new device, and scan the one-time QR code or privately send its link. This joins the same live workspace; project **Share** instead creates an independent editable copy for another person.
 
 Open an installed copy while online after an update so the service worker can refresh it. Cached projects remain editable without a connection and changes stay in the durable local queue until synchronization succeeds. A project marked server-only must be opened or explicitly made **Available offline** before disconnecting. Logging out removes that browser's online credential but cannot remotely erase data already cached on an offline device.
@@ -128,7 +139,7 @@ Highlights open into wider ribbons while deep shadows remain retained metal.
 The filter exposes six direct controls:
 
 - **Ribbon pitch** sets the centre-to-centre spacing of neighbouring cuts.
-- **Maximum cut width** controls how far a bright ribbon may open. Kerfloom
+- **Maximum cut width** controls how far a bright ribbon may open. Kerfspan
   limits it automatically so the configured finished web still fits beside it.
 - **Base direction** rotates the underlying parallel rhythm before local form
   bends it.
@@ -166,9 +177,9 @@ Select **Projects** in the desktop header or the permanent mobile Tools bar to b
 
 **New project** starts as one recoverable device-local draft rather than immediately creating an empty server project. Import and edit normally, then choose **Save to Projects** when it should join the encrypted workspace. Starting another project warns before replacing an unsaved draft.
 
-Select **Projects → Devices** to connect a phone, tablet, or another computer to the same live workspace. Name the device, then scan the one-time QR code or privately send its link. The credential is carried in the URL fragment so it is not included in HTTP request logs, expires automatically, and can be cancelled before use. The Devices screen shows every linked device and its last connection time; another linked device can revoke a lost device, while Kerfloom prevents the current device from accidentally revoking itself. If a browser already belongs to a different workspace, it must explicitly confirm replacing that connection. Device linking gives both devices access to the same projects and is intentionally distinct from **Share**, which creates an independent editable copy.
+Select **Projects → Devices** to connect a phone, tablet, or another computer to the same live workspace. Name the device, then scan the one-time QR code or privately send its link. The credential is carried in the URL fragment so it is not included in HTTP request logs, expires automatically, and can be cancelled before use. The Devices screen shows every linked device and its last connection time; another linked device can revoke a lost device, while Kerfspan prevents the current device from accidentally revoking itself. If a browser already belongs to a different workspace, it must explicitly confirm replacing that connection. Device linking gives both devices access to the same projects and is intentionally distinct from **Share**, which creates an independent editable copy.
 
-Autosave reports `Saving…`, `Saved to server`, an offline queued state, or a retry action if synchronization fails. Every change is written to IndexedDB first and placed in a durable complete upload queue; online synchronization uploads each immutable source/export asset once, then sends small versioned state manifests for ordinary edits. The UI reports a server save only after the server acknowledges the revision. Synchronization isolates failures per project, repairs a damaged queued package from its complete local copy when possible, and gives retries of the same edit one stable conflict-copy identity. A problem in an older project therefore cannot block a healthy current project or multiply conflict copies. Pending changes are flushed before opening or replacing a panel, and `Ctrl/Cmd+S` requests an immediate save. Kerfloom retains up to ten recovery points per project after validation, manufacturing repair, accepted smart-support changes, and export.
+Autosave reports `Saving…`, `Saved to server`, an offline queued state, or a retry action if synchronization fails. Every change is written to IndexedDB first and placed in a durable complete upload queue; online synchronization uploads each immutable source/export asset once, then sends small versioned state manifests for ordinary edits. The UI reports a server save only after the server acknowledges the revision. Synchronization isolates failures per project, repairs a damaged queued package from its complete local copy when possible, and gives retries of the same edit one stable conflict-copy identity. A problem in an older project therefore cannot block a healthy current project or multiply conflict copies. Pending changes are flushed before opening or replacing a panel, and `Ctrl/Cmd+S` requests an immediate save. Kerfspan retains up to ten recovery points per project after validation, manufacturing repair, accepted smart-support changes, and export.
 
 Accepted manufacturing repairs remain active while the user completes manual material and support corrections. A hand-painted cell overrides only an opposite generated edit at that cell; unaffected generated repairs remain reversible and active. Ordinary creative gestures update the canvas immediately, invalidate stale validation, and leave the next full scan to **Run all checks**. When the user is deliberately fixing a selected item from Problems, **Recheck selected problem** refreshes that review queue after the correction. Changing the underlying artwork, panel geometry, or cutting limits still marks dependent repair work stale and requires regeneration.
 
@@ -178,7 +189,7 @@ The canonical encrypted package contains the editable geometry, original photogr
 
 Select **Share** on a project card to create a server-hosted snapshot. The share package contains the editable project, original source image when it remains available, creative candidates, manual edits, supports, repairs, up to ten recovery points, and export artefacts retained by the current browser. SVG, DXF, and PNG exports are retained locally from this release onward; files downloaded by older versions cannot be recovered from the browser's Downloads folder automatically.
 
-Share packages are encrypted at rest and protected by a random secret that appears only in the link and the creating browser. A recipient must open that link on an invited Kerfloom device. The first recipient device claims the snapshot and can import an independent editable local copy. Shares expire after 7, 30, or 90 days and the owner can revoke them from the same project's Share dialog. Revocation prevents another download but cannot erase a copy the recipient already imported.
+Share packages are encrypted at rest and protected by a random secret that appears only in the link and the creating browser. A recipient must open that link on an invited Kerfspan device. The first recipient device claims the snapshot and can import an independent editable local copy. Shares expire after 7, 30, or 90 days and the owner can revoke them from the same project's Share dialog. Revocation prevents another download but cannot erase a copy the recipient already imported.
 
 Sharing creates an independent copy for the recipient. It does not grant access to the owner's live server project, and neither copy changes when the other person edits theirs.
 
@@ -320,15 +331,17 @@ deploy.sh      Tested build-and-deploy entry point
 
 ## Project documents
 
+- [`BRAND.md`](BRAND.md): the public identity, visual language, voice, and compatibility boundary.
+- [`docs/KERFSPAN_USER_GUIDE.md`](docs/KERFSPAN_USER_GUIDE.md): the complete operator handbook mirrored by in-app Help.
 - [`docs/K14_MOBILE_ACCESSIBILITY_ACCEPTANCE.md`](docs/K14_MOBILE_ACCESSIBILITY_ACCEPTANCE.md): the outstanding physical-device and assistive-technology acceptance matrix.
 - [`docs/K16_PROCESSING_BASELINE.md`](docs/K16_PROCESSING_BASELINE.md): the deterministic performance baseline and device-acceptance procedure.
 - [`docs/K19_ASSET_SYNC_DESIGN.md`](docs/K19_ASSET_SYNC_DESIGN.md): the state and asset synchronization contract.
-- [`docs/history/KERFLOOM_AUDIT_AND_ACTION_PLAN.md`](docs/history/KERFLOOM_AUDIT_AND_ACTION_PLAN.md): the product audit of September 2026 and the implementation history that followed it.
+- [`docs/history/KERFSPAN_AUDIT_AND_ACTION_PLAN.md`](docs/history/KERFSPAN_AUDIT_AND_ACTION_PLAN.md): the product audit of September 2026 and the implementation history that followed it.
 
-Kerfloom began as `stencil-cnc`. That name remains in internal identifiers that
-existing installations and saved files depend on: the project file schema, the
-browser storage names, the device cookie, and the systemd units and volume of
-the production deployment.
+Kerfspan began as `stencil-cnc` and was previously branded Kerfloom. Those older
+names remain in internal identifiers that existing installations and saved files
+depend on: the project file schema, browser storage names, device cookie, and
+the systemd units and volume of the production deployment.
 
 ## License
 

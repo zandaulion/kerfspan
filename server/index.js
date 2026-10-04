@@ -162,7 +162,7 @@ export function createApp(options = {}) {
       return errorResponse(
         res,
         428,
-        'Reload Kerfloom before synchronizing projects.',
+        'Reload Kerfspan before synchronizing projects.',
         'workspace_required',
       );
     }
@@ -192,7 +192,7 @@ export function createApp(options = {}) {
     // healthy, so include a real (but non-revealing) database round trip.
     database.prepare('SELECT 1 AS ready').get();
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ ok: true, name: 'kerfloom', time: new Date().toISOString() });
+    res.json({ ok: true, name: 'kerfspan', time: new Date().toISOString() });
   });
 
   const redeem = (req, res) => {
@@ -683,7 +683,7 @@ if (isMain) {
   const port = envInteger('PORT', 3000);
   const host = process.env.BIND_HOST || '0.0.0.0';
   const server = app.listen(port, host, () => {
-    console.log(`Kerfloom listening on ${host}:${port}`);
+    console.log(`Kerfspan listening on ${host}:${port}`);
   });
 
   const stop = () => {

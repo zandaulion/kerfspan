@@ -49,7 +49,7 @@ request() {
 
 usage() {
   command cat <<'USAGE'
-Kerfloom administration
+Kerfspan administration
 
 usage: ./admin.sh <command>
 
@@ -65,7 +65,7 @@ usage: ./admin.sh <command>
   prune-devices        permanently delete revoked devices
   health               check service health
 
-Run it on the host that runs Kerfloom; it talks to the loopback port. It reads
+Run it on the host that runs Kerfspan; it talks to the loopback port. It reads
 ADMIN_TOKEN from site.env (compose) or ~/.config/kerfloom/kerfloom.env
 (deploy.sh); set ADMIN_API to reach a different address.
 USAGE

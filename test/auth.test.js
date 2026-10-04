@@ -82,7 +82,7 @@ test('administrator revocation wins over the invite rebind grace period', () => 
 test('workspace access lists and revocations remain scoped to one workspace', () => {
   const db = memoryDatabase();
   const auth = new AuthService(db, {
-    publicBaseUrl: 'https://kerfloom.example',
+    publicBaseUrl: 'https://kerfspan.example',
     clock: () => new Date('2026-09-13T10:00:00.000Z'),
   });
   const firstOwner = auth.redeemInvite(auth.createInvite('First owner').code);

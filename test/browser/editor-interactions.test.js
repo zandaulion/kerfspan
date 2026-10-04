@@ -168,7 +168,7 @@ async function openEditor({ viewport = { width: 1280, height: 900 } } = {}) {
   });
   await page.goto(`${baseUrl}/#invite=${encodeURIComponent(invite.code)}`);
   await page.getByLabel('Name this device').fill('K01 browser');
-  await page.getByRole('button', { name: 'Open Kerfloom' }).click();
+  await page.getByRole('button', { name: 'Open Kerfspan' }).click();
   await page.locator('#app-main').waitFor({ state: 'visible' });
   await page.waitForFunction(() => typeof window.stencilCncIsBusy === 'function');
   await page.locator('#file-input').setInputFiles({
