@@ -8,11 +8,54 @@ The central rule is simple: dark geometry represents retained metal and light ge
 
 Kerfloom is a fabrication aid, not a machine-safety certificate. **Ready for CAM review** means that the current geometry passed Kerfloom's configured checks; the operator must still verify the material, machine, consumables, compensation, lead-ins, cut order, fixturing, heat behavior, and final use.
 
+![Kerfloom turning a portrait into an icon-stencil panel, shown back-lit as it would glow when cut](docs/screenshots/03-icon-stencil-backlit.png)
+
+| | | |
+|---|---|---|
+| ![Variable dots](docs/screenshots/04-variable-dots.png) | ![Slats](docs/screenshots/05-slats.png) | ![Flow engraving](docs/screenshots/06-flow-engraving.png) |
+| Variable dots | Slats | Flow engraving |
+| ![Radial cuts](docs/screenshots/07-radial-cuts.png) | ![Smart supports proposed for pieces that would fall out](docs/screenshots/09-smart-supports.png) | ![Export with the panel ready for CAM review](docs/screenshots/11-export.png) |
+| Radial cuts | Smart supports | Ready for CAM review |
+
+More in [docs/screenshots](docs/screenshots/), including the [style library](docs/screenshots/01-style-library.png) and the editor [on a phone](docs/screenshots/12-phone-icon-stencil.png).
+
+## Quick start
+
+You need Docker with Compose, or Podman with `podman compose`, and about 3 GB
+of disk for the two images. Images build for x86-64 and ARM64.
+
+```bash
+git clone https://github.com/zandaulion/kerfloom.git
+cd kerfloom
+cp site.env.example site.env
+# In site.env, set ADMIN_TOKEN and PROJECT_ENCRYPTION_KEY, each to the output
+# of: openssl rand -hex 32. Back up PROJECT_ENCRYPTION_KEY: projects cannot be
+# decrypted without it.
+docker compose up -d --build
+./admin.sh invite "My laptop"
+```
+
+Open the link `admin.sh` prints (or http://localhost:3000) and redeem the
+one-time code. Every browser needs its own invite, or a device link from
+**Projects → Devices** in a browser that is already signed in.
+
+**Using it from other devices.** Kerfloom needs a secure context: `https://`, or
+`http://localhost` on the machine that runs it. Over plain HTTP from another
+device the browser withholds the cookie, offline storage and Web Crypto that
+Kerfloom depends on, so the sign-in page says so and stops. Put it behind a
+reverse proxy that terminates TLS (the [Caddy example](deploy/Caddyfile.snippet)
+works), or use something like `tailscale serve`, and set `PUBLIC_BASE_URL` to
+that address so invite links point there. Only behind such a proxy, set
+`KERFLOOM_BIND=0.0.0.0` (or `KERFLOOM_PORT`) for the published port and
+`TRUST_PROXY_HEADERS=true`.
+
+Data lives in the `kerfloom-data` volume. `docker compose down` keeps it;
+`down -v` deletes it. For a systemd-managed production install with Caddy, see
+[deploy/README.md](deploy/README.md).
+
 ## Documentation
 
-Select **Help** in the Kerfloom header for the searchable, mobile-responsive handbook. The existing question-mark button in each workflow stage opens that handbook directly at the relevant chapter. It covers the complete creative workflow, all style families, tone and placement, cutting-profile terminology, smart and manual supports, validation and reversible repairs, CAM hand-off, autosave and recovery, linked devices, sharing, keyboard/mobile use, privacy boundaries, troubleshooting, and a final release checklist.
-
-The operator handbook source is [`docs/KERFLOOM_USER_GUIDE.md`](docs/KERFLOOM_USER_GUIDE.md). The separate [`docs/K14_MOBILE_ACCESSIBILITY_ACCEPTANCE.md`](docs/K14_MOBILE_ACCESSIBILITY_ACCEPTANCE.md) records the outstanding physical-device and assistive-technology acceptance matrix, [`docs/K16_PROCESSING_BASELINE.md`](docs/K16_PROCESSING_BASELINE.md) records the deterministic performance baseline and device-acceptance procedure, [`docs/K19_ASSET_SYNC_DESIGN.md`](docs/K19_ASSET_SYNC_DESIGN.md) describes the current state/asset synchronization contract, and [`docs/KERFLOOM_AUDIT_AND_ACTION_PLAN.md`](docs/KERFLOOM_AUDIT_AND_ACTION_PLAN.md) records the product audit and implementation history.
+Select **Help** in the Kerfloom header for the searchable, mobile-responsive handbook; the question-mark button in each workflow stage opens it at the relevant chapter. Its source is [`docs/KERFLOOM_USER_GUIDE.md`](docs/KERFLOOM_USER_GUIDE.md). Design notes and the development history are listed under [Project documents](#project-documents).
 
 ## What it does
 
@@ -234,7 +277,8 @@ The geometry core is deterministic and covered independently of the browser UI. 
 
 ## Deployment
 
-Production deployment uses two rootless Podman containers on a private network. The web container is bound to loopback; Caddy is the only origin, and the analysis container is reachable only from the private container network.
+For a first install, use the [Quick start](#quick-start). The production
+deployment described here uses two rootless Podman containers on a private network. The web container is bound to loopback; Caddy is the only origin, and the analysis container is reachable only from the private container network.
 
 ```bash
 ./deploy.sh
@@ -264,6 +308,7 @@ Never commit `.env` files, the runtime `data/` directory, database files, photog
 
 ```text
 analiza/       Python analysis and photographic style generation
+compose.yaml   The Quick start: both services with Docker or Podman Compose
 deploy/        Containerfiles, rootless Quadlets, and Caddy guidance
 models/        Bundled local analysis model
 server/        Express application, authentication, and persistence
@@ -273,6 +318,18 @@ admin.sh       Loopback administration helper
 deploy.sh      Tested build-and-deploy entry point
 ```
 
+## Project documents
+
+- [`docs/K14_MOBILE_ACCESSIBILITY_ACCEPTANCE.md`](docs/K14_MOBILE_ACCESSIBILITY_ACCEPTANCE.md): the outstanding physical-device and assistive-technology acceptance matrix.
+- [`docs/K16_PROCESSING_BASELINE.md`](docs/K16_PROCESSING_BASELINE.md): the deterministic performance baseline and device-acceptance procedure.
+- [`docs/K19_ASSET_SYNC_DESIGN.md`](docs/K19_ASSET_SYNC_DESIGN.md): the state and asset synchronization contract.
+- [`docs/history/KERFLOOM_AUDIT_AND_ACTION_PLAN.md`](docs/history/KERFLOOM_AUDIT_AND_ACTION_PLAN.md): the product audit of September 2026 and the implementation history that followed it.
+
+Kerfloom began as `stencil-cnc`. That name remains in internal identifiers that
+existing installations and saved files depend on: the project file schema, the
+browser storage names, the device cookie, and the systemd units and volume of
+the production deployment.
+
 ## License
 
-The application is licensed under GPL-3.0-or-later. Third-party notices are recorded in [NOTICE.md](NOTICE.md).
+The application is licensed under GPL-3.0-or-later; the license text is in [LICENSE](LICENSE). Third-party notices are recorded in [NOTICE.md](NOTICE.md).

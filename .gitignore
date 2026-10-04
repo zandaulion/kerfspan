@@ -28,13 +28,20 @@ output/
 *.webp
 *.heic
 !web/icons/*.png
+# Product screenshots, rendered from a consented photograph that is never shown.
+!docs/screenshots/*.png
 
-# Material de referinta adunat de pe Pinterest: lucrari ale unor terti,
-# tinute local ca sa ne inspire filtrele. Nu sunt ale noastre, deci nu
-# intra in depozit -- nici macar intr-unul privat, ca sa nu ajunga acolo
-# din obisnuinta in ziua in care depozitul devine public.
+# Reference material collected from Pinterest: other people's work, kept
+# locally to inspire the filters. It is not ours, so it never enters the
+# repository -- not even a private one, so that habit cannot carry it in on
+# the day the repository becomes public.
 samples/
 
-# Fotografiile de test sunt ale unor oameni reali, inclusiv copii. Raman
-# pe disc, niciodata in depozit.
+# The test photographs are of real people, children among them. They stay on
+# disk, never in the repository.
 photos/
+
+# The first screenshot set, made from real photographs before the product was
+# renamed. Superseded by docs/screenshots and kept only on disk.
+portfolio-screenshots/
+portfolio-screenshots.zip
