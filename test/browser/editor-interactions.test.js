@@ -270,6 +270,32 @@ test('rulers retain physical values while zoom changes their screen spacing', as
   }
 });
 
+test('the canvas viewport stays inside its column, so Fit shows the whole panel', async () => {
+  // The workspace column once sized itself to the canvas toolbar's width.
+  // At a laptop width that pushed the viewport 123 px under the side pane:
+  // Fit centred the panel in space the user could not see and clipped its
+  // right edge, and the toolbar's zoom readout was cut off.
+  const fixture = await openEditor({ viewport: { width: 1440, height: 900 } });
+  try {
+    const measure = () => fixture.page.evaluate(() => {
+      const box = (id) => document.getElementById(id).getBoundingClientRect();
+      const [workspace, viewport, stage, review] = ['workspace', 'canvas-viewport', 'canvas-stage', 'review-pane'].map(box);
+      return { workspace, viewport, stage, review };
+    });
+    for (const stageName of ['prepare', 'panel', 'export']) {
+      await fixture.page.locator(`#stage-${stageName}`).click();
+      await fixture.page.locator('#btn-fit').click();
+      const { workspace, viewport, stage, review } = await measure();
+      assert.ok(viewport.right <= workspace.right + 0.5, `${stageName}: the viewport ends inside its column`);
+      assert.ok(viewport.right <= review.left + 0.5, `${stageName}: the viewport does not run under the side pane`);
+      assert.ok(stage.left >= viewport.left - 0.5 && stage.right <= viewport.right + 0.5, `${stageName}: Fit keeps the panel's width visible`);
+      assert.ok(stage.top >= viewport.top - 0.5 && stage.bottom <= viewport.bottom + 0.5, `${stageName}: Fit keeps the panel's height visible`);
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
 test('unvalidated artwork downloads a visibly watermarked draft PNG', async () => {
   const fixture = await openEditor();
   try {
@@ -317,6 +343,12 @@ test('creative material points commit without forcing connectivity review', asyn
     await fixture.page.locator('#tool-remove').click();
     const canvas = fixture.page.locator('#editor-canvas');
     const clickKnownMaterial = async () => {
+      // The tool's floating options sit over the canvas once the viewport is
+      // only as wide as its column; close them, as a user would, to reach
+      // the panel's centre.
+      if (await fixture.page.locator('#btn-close-tool-options').isVisible()) {
+        await fixture.page.locator('#btn-close-tool-options').click();
+      }
       const bounds = await canvas.boundingBox();
       assert.ok(bounds);
       await fixture.page.mouse.click(
