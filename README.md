@@ -29,8 +29,8 @@ You need Docker with Compose, or Podman with `podman compose`, and about 3 GB
 of disk for the two images. Images build for x86-64 and ARM64.
 
 ```bash
-git clone https://github.com/zandaulion/kerfloom.git
-cd kerfloom
+git clone https://github.com/zandaulion/kerfspan.git
+cd kerfspan
 cp site.env.example site.env
 # In site.env, set ADMIN_TOKEN and PROJECT_ENCRYPTION_KEY, each to the output
 # of: openssl rand -hex 32. Back up PROJECT_ENCRYPTION_KEY: projects cannot be
