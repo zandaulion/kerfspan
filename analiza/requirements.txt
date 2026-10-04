@@ -1,5 +1,5 @@
-# Versiuni dovedite pe aarch64 (aceleaşi ca la faceslice). mediapipe 0.10.x
-# n-are roată pentru arhitectura asta; 1.0.1 are.
+# Versions proven on aarch64. mediapipe 0.10.x has no wheel for that
+# architecture; 1.0.1 does.
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 python-multipart==0.0.32

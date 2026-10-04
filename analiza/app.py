@@ -94,7 +94,7 @@ def _latime_lucru(coala_lat_mm: float, limita_min_mm: float) -> int:
 def _citeste(date: bytes, latime_lucru: int) -> np.ndarray:
     img = cv2.imdecode(np.frombuffer(date, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
-        raise HTTPException(415, "Fişierul nu e o imagine pe care s-o pot citi.")
+        raise HTTPException(415, "The file is not an image I can read.")
     inaltime, latime = img.shape[:2]
     if latime != latime_lucru:
         img = cv2.resize(img, (latime_lucru, round(inaltime * latime_lucru / latime)),
@@ -106,14 +106,14 @@ def _citeste_linie(date: bytes, latime_lucru: int) -> np.ndarray:
     """Read line art while compositing transparency onto white like the PWA."""
     img = cv2.imdecode(np.frombuffer(date, np.uint8), cv2.IMREAD_UNCHANGED)
     if img is None:
-        raise HTTPException(415, "Fişierul nu e o imagine pe care s-o pot citi.")
+        raise HTTPException(415, "The file is not an image I can read.")
     if img.ndim == 2:
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     elif img.shape[2] == 4:
         alfa = img[:, :, 3:4].astype(np.float32) / 255.0
         img = np.clip(img[:, :, :3].astype(np.float32) * alfa + 255.0 * (1.0 - alfa), 0, 255).astype(np.uint8)
     elif img.shape[2] != 3:
-        raise HTTPException(415, "Imaginea are un format de culoare neacceptat.")
+        raise HTTPException(415, "The image uses an unsupported colour format.")
     inaltime, latime = img.shape[:2]
     if latime != latime_lucru:
         img = cv2.resize(
@@ -181,38 +181,38 @@ async def analizeaza(
     netezire_linie_px: float = Form(0.0),
     pete_min_px2: float = Form(0.0),
     latime_baza_px: int = Form(900),
-    # şablon portret
+    # portrait stencil
     prag_sablon: float = Form(0.50),
     contur: float = Form(0.60),
-    # şablon icoană
+    # icon stencil
     prag_icoana: float = Form(0.56),
     detaliu_icoana: float = Form(0.65),
     latime_linie_icoana_mm: float = Form(3.0),
     simplificare_icoana_mm: float = Form(3.0),
     aureola_icoana: bool = Form(True),
     scala_aureola_icoana: float = Form(1.35),
-    # portret grafic
+    # graphic portrait
     prag_grafic: float = Form(0.50),
     detaliu_grafic: float = Form(0.70),
     simplificare_grafic_mm: float = Form(1.5),
-    # linii negative / contur / ornament
+    # negative-space lines / contour bands / ornament
     detaliu_linii: float = Form(0.40),
     latime_linie_mm: float = Form(2.0),
     niveluri_contur: int = Form(5),
     patru_directii: bool = Form(False),
-    # gravură
+    # engraving
     pas_gravura_mm: float = Form(12.0),
     lungime_gravura_mm: float = Form(20.0),
-    # gravură în flux
+    # flow engraving
     pas_flux_mm: float = Form(12.0),
     latime_flux_mm: float = Form(7.0),
     unghi_flux: float = Form(-15.0),
     urmarire_flux: float = Form(0.72),
     netezire_flux_mm: float = Form(10.0),
     prag_flux: float = Form(0.16),
-    # siluetă
+    # silhouette
     netezire_silueta_mm: float = Form(8.0),
-    # raze
+    # radial cuts
     numar_raze: int = Form(64),
     celula_raze_mm: float = Form(12.0),
     diametru_miez_raze_mm: float = Form(50.0),
@@ -220,20 +220,20 @@ async def analizeaza(
     centru_raze_x: float = Form(0.25),
     centru_raze_y: float = Form(0.50),
     prag_raze: float = Form(0.12),
-    # lamele
+    # slats
     pas_mm: float = Form(38.0),
     orizontal: bool = Form(False),
     unghi_lamele: float | None = Form(None),
-    # haşură
+    # hatch
     unghi: float = Form(30.0),
     pas_rand_mm: float = Form(9.0),
     celula_mm: float = Form(12.0),
-    # puncte variabile
+    # variable dots
     pas_puncte_mm: float = Form(41.0),
     diametru_max_puncte_mm: float = Form(33.8),
     unghi_puncte: float = Form(10.0),
     prag_puncte: float = Form(0.42),
-    # limite fizice
+    # physical limits
     punte_min_mm: float = Form(3.0),
     fanta_min_mm: float = Form(2.0),
     kerf_mm: float = Form(0.0),
@@ -244,7 +244,7 @@ async def analizeaza(
 ) -> JSONResponse:
     date = await foto.read()
     if len(date) > MAX_FOTO:
-        raise HTTPException(413, "Fotografie prea mare.")
+        raise HTTPException(413, "The photograph is too large.")
     try:
         # Historical rasters keep a complete-kerf allowance. Current rasters
         # are already finished boundaries, so CAM performs the only offset.
@@ -432,7 +432,7 @@ async def analizeaza(
                               latime_mm=max(latime_linie_mm, fanta_min_mm),
                               patru_directii=patru_directii)
         else:
-            raise HTTPException(400, f"Stil necunoscut: {stil}")
+            raise HTTPException(400, f"Unknown style: {stil}")
 
         # Gridded styles construct their cut and web dimensions analytically.
         # Free-form masks need a final physical morphology pass so photographic

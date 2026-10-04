@@ -97,12 +97,12 @@ def _finalizeaza_subiect(
 ) -> np.ndarray:
     inaltime, latime = forma
     if tuple(masca.shape) != tuple(forma):
-        raise ValueError("Masca subiectului nu are mărimea imaginii.")
+        raise ValueError("The subject mask is not the size of the image.")
     masca = masca.astype(np.uint8)
 
     if masca.sum() < 0.01 * masca.size:
         raise FaraSubiect(
-            "Nu am găsit o persoană în fotografie, sau ocupă prea puţin din cadru."
+            "No person was found in the photograph, or they fill too little of the frame."
         )
 
     nucleu = max(3, int(round(min(inaltime, latime) * 0.01)) | 1)
@@ -150,7 +150,7 @@ def rafineaza_subiect_icoana(
     same-colour background lobe before the geometric halo is added.
     """
     if bgr.ndim != 3 or bgr.shape[2] != 3 or categorii.shape != bgr.shape[:2]:
-        raise ValueError("Imaginea şi clasele semantice trebuie să aibă aceeaşi mărime.")
+        raise ValueError("The image and the semantic classes must be the same size.")
     clase = [PAR, PIELE_CORP, PIELE_FATA] + ([HAINE] if cu_haine else [])
     probabil = np.isin(categorii, clase)
     sigur = np.isin(categorii, [PAR, PIELE_CORP, PIELE_FATA])

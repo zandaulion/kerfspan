@@ -132,7 +132,7 @@ class TestLamele(unittest.TestCase):
         with self.assertRaises(ReglajImposibil) as ctx:
             lamele(camp_uniform(200, 200, 0.5), MM_PE_PX,
                    pas_mm=2, punte_min_mm=1.5, fanta_min_mm=1)
-        self.assertIn("cel puţin", str(ctx.exception),
+        self.assertIn("at least", str(ctx.exception),
                       "the refusal should say what would work")
 
     def test_bara_ramane_intre_limita_materialului_si_a_sculei(self):
@@ -216,8 +216,8 @@ class TestRezolutie(unittest.TestCase):
             with self.subTest(stil=fn.__name__):
                 with self.assertRaises(ReglajImposibil) as ctx:
                     fn(camp, 1.33, punte_min_mm=1.0, fanta_min_mm=1.2, **argumente)
-                self.assertIn("pixeli", str(ctx.exception))
-                self.assertIn("mm pe pixel", str(ctx.exception),
+                self.assertIn("pixels", str(ctx.exception))
+                self.assertIn("mm per pixel", str(ctx.exception),
                               "the message should name the resolution that caused it")
 
     def test_aceleaşi_limite_trec_la_o_rezoluţie_potrivită(self):

@@ -44,9 +44,9 @@ def _verifica_rezolutie(mm_pe_px: float, **limite_mm: float) -> None:
     for nume, valoare in limite_mm.items():
         if valoare / mm_pe_px < MIN_PIXELI:
             raise ReglajImposibil(
-                f"{nume} de {valoare:g} mm iese sub {MIN_PIXELI} pixeli la "
-                f"rezoluţia asta ({mm_pe_px:.2f} mm pe pixel). Micşorează panoul "
-                f"sau măreşte limita la cel puţin {MIN_PIXELI * mm_pe_px:.1f} mm."
+                f"{nume} of {valoare:g} mm spans fewer than {MIN_PIXELI} pixels at "
+                f"this resolution ({mm_pe_px:.2f} mm per pixel). Use a smaller panel "
+                f"or raise the limit to at least {MIN_PIXELI * mm_pe_px:.1f} mm."
             )
 
 
@@ -76,13 +76,13 @@ def linie_art(
     inversion swaps retained and removed regions.
     """
     if imagine.ndim != 3 or imagine.shape[2] != 3:
-        raise ValueError("Imaginea pentru linie trebuie să fie BGR.")
+        raise ValueError("The line-art image must be BGR.")
     if not 0.0 <= prag <= 1.0:
-        raise ReglajImposibil("Pragul liniei trebuie să fie între 0 şi 1.")
+        raise ReglajImposibil("The line threshold must be between 0 and 1.")
     if not -100.0 <= contrast <= 100.0:
-        raise ReglajImposibil("Contrastul liniei trebuie să fie între -100 şi 100.")
+        raise ReglajImposibil("The line contrast must be between -100 and 100.")
     if netezire_px < 0 or pete_min_px2 < 0:
-        raise ReglajImposibil("Netezirea şi aria petelor nu pot fi negative.")
+        raise ReglajImposibil("Smoothing and speck area cannot be negative.")
 
     # Rec. 709 luminance, exactly like maskFromImageData in the browser.
     albastru, verde, rosu = cv2.split(imagine.astype(np.float32))
@@ -138,9 +138,9 @@ def punte_inainte_de_kerf(punte_finita_mm: float, kerf_mm: float) -> float:
     complete kerf width must be added before rasterising the filter.
     """
     if punte_finita_mm <= 0:
-        raise ReglajImposibil("Puntea finită trebuie să fie pozitivă.")
+        raise ReglajImposibil("The finished web must be positive.")
     if kerf_mm < 0:
-        raise ReglajImposibil("Kerf-ul nu poate fi negativ.")
+        raise ReglajImposibil("The kerf cannot be negative.")
     return punte_finita_mm + kerf_mm
 
 
@@ -151,14 +151,14 @@ def punte_pentru_interpretare(
 ) -> float:
     """Return raster web width for the versioned contour interpretation."""
     if punte_finita_mm <= 0:
-        raise ReglajImposibil("Puntea finită trebuie să fie pozitivă.")
+        raise ReglajImposibil("The finished web must be positive.")
     if kerf_mm < 0:
-        raise ReglajImposibil("Kerf-ul nu poate fi negativ.")
+        raise ReglajImposibil("The kerf cannot be negative.")
     if interpretare == INTERPRETARE_FINITA_CAM:
         return punte_finita_mm
     if interpretare == INTERPRETARE_LEGACY:
         return punte_inainte_de_kerf(punte_finita_mm, kerf_mm)
-    raise ReglajImposibil("Interpretarea geometriei nu este acceptată.")
+    raise ReglajImposibil("This geometry interpretation is not supported.")
 
 
 def aplica_limite_fizice(
@@ -176,12 +176,12 @@ def aplica_limite_fizice(
     artwork use this as a final deterministic safety pass.
     """
     if masca.ndim != 2:
-        raise ValueError("Masca trebuie să aibă două dimensiuni.")
+        raise ValueError("The mask must be two-dimensional.")
     if punte_min_mm <= 0 or fanta_min_mm <= 0:
-        raise ReglajImposibil("Limitele fizice trebuie să fie pozitive.")
+        raise ReglajImposibil("The physical limits must be positive.")
     _verifica_rezolutie(mm_pe_px, **{
-        "Puntea": punte_min_mm,
-        "Fanta": fanta_min_mm,
+        "The web": punte_min_mm,
+        "The opening": fanta_min_mm,
     })
 
     material = masca.astype(bool)
@@ -211,10 +211,10 @@ def _muchii_taiate(
 ) -> np.ndarray:
     """Extract stable, tool-sized feature lines as openings in a plate."""
     if camp.shape != zona.shape:
-        raise ValueError("Câmpul şi zona trebuie să aibă aceeaşi mărime.")
+        raise ValueError("The field and the zone must be the same size.")
     if not 0.0 <= detaliu <= 1.0:
-        raise ReglajImposibil("Detaliul trebuie să fie între 0 şi 1.")
-    _verifica_rezolutie(mm_pe_px, **{"Linia": latime_mm})
+        raise ReglajImposibil("The detail must be between 0 and 1.")
+    _verifica_rezolutie(mm_pe_px, **{"The line": latime_mm})
     imagine = np.clip(camp * 255, 0, 255).astype(np.uint8)
     sus = int(round(230 - 170 * detaliu))
     muchii = cv2.Canny(imagine, max(10, sus // 2), max(20, sus)) > 0
@@ -247,12 +247,12 @@ def gravura(
     """Woodcut-like marks that follow the local tangent of the photograph."""
     if pas_mm < fanta_min_mm + punte_min_mm:
         raise ReglajImposibil(
-            f"Un pas de {pas_mm:g} mm nu poate ţine o fantă de {fanta_min_mm:g} mm "
-            f"şi o punte de {punte_min_mm:g} mm."
+            f"A pitch of {pas_mm:g} mm cannot hold an opening of {fanta_min_mm:g} mm "
+            f"and a web of {punte_min_mm:g} mm."
         )
     if lungime_mm < fanta_min_mm:
-        raise ReglajImposibil("Trăsătura trebuie să fie cel puţin cât fanta minimă.")
-    _verifica_rezolutie(mm_pe_px, **{"Puntea": punte_min_mm, "Fanta": fanta_min_mm})
+        raise ReglajImposibil("The mark must be at least as long as the minimum opening.")
+    _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm, "The opening": fanta_min_mm})
     zona = subiect.astype(bool)
     lumina = np.clip(1.0 - camp, 0.0, 1.0)
     gx = cv2.Sobel(camp, cv2.CV_32F, 1, 0, ksize=3)
@@ -308,30 +308,30 @@ def gravura_flux(
     creating geometry for a later repair pass to destroy.
     """
     if camp.ndim != 2 or camp.shape != subiect.shape:
-        raise ValueError("Câmpul şi masca subiectului trebuie să aibă aceeaşi mărime.")
+        raise ValueError("The field and the subject mask must be the same size.")
     if pas_mm < fanta_min_mm + punte_min_mm:
         raise ReglajImposibil(
-            f"Un pas de {pas_mm:g} mm nu poate ţine o fantă de {fanta_min_mm:g} mm "
-            f"şi o punte de {punte_min_mm:g} mm."
+            f"A pitch of {pas_mm:g} mm cannot hold an opening of {fanta_min_mm:g} mm "
+            f"and a web of {punte_min_mm:g} mm."
         )
     if not fanta_min_mm <= latime_max_mm <= pas_mm - punte_min_mm:
         raise ReglajImposibil(
-            f"Lăţimea maximă trebuie să fie între {fanta_min_mm:g} mm şi "
-            f"{pas_mm - punte_min_mm:g} mm pentru pasul şi puntea alese."
+            f"The maximum width must be between {fanta_min_mm:g} mm and "
+            f"{pas_mm - punte_min_mm:g} mm for the chosen pitch and web."
         )
     if not np.isfinite(unghi) or not -90.0 <= unghi <= 90.0:
-        raise ReglajImposibil("Unghiul benzilor trebuie să fie între -90 şi 90 de grade.")
+        raise ReglajImposibil("The band angle must be between -90 and 90 degrees.")
     if not 0.0 <= urmarire <= 1.0:
-        raise ReglajImposibil("Urmărirea formelor trebuie să fie între 0 şi 1.")
+        raise ReglajImposibil("Form following must be between 0 and 1.")
     if not np.isfinite(netezire_mm) or netezire_mm <= 0:
-        raise ReglajImposibil("Netezirea fluxului trebuie să fie pozitivă.")
+        raise ReglajImposibil("The flow smoothing must be positive.")
     if not 0.0 <= prag_lumina < 1.0:
-        raise ReglajImposibil("Pragul de lumină trebuie să fie între 0 şi 1.")
+        raise ReglajImposibil("The light threshold must be between 0 and 1.")
     if not np.isfinite(gamma) or gamma <= 0:
-        raise ReglajImposibil("Separarea tonului trebuie să fie pozitivă.")
+        raise ReglajImposibil("The tone separation must be positive.")
     _verifica_rezolutie(mm_pe_px, **{
-        "Puntea": punte_min_mm,
-        "Fanta": fanta_min_mm,
+        "The web": punte_min_mm,
+        "The opening": fanta_min_mm,
     })
 
     zona = subiect.astype(bool)
@@ -436,14 +436,14 @@ def benzi_contur(
 ) -> np.ndarray:
     """Iso-tone contour bands, like topographic lines over the portrait."""
     if not 2 <= int(niveluri) <= 16:
-        raise ReglajImposibil("Numărul de contururi trebuie să fie între 2 şi 16.")
+        raise ReglajImposibil("The number of contours must be between 2 and 16.")
     zona = subiect.astype(bool)
     taiat = np.zeros(camp.shape, dtype=bool)
     miez = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     for nivel in np.linspace(0.1, 0.9, int(niveluri)):
         banda = ((camp >= nivel) & zona).astype(np.uint8)
         taiat |= cv2.morphologyEx(banda, cv2.MORPH_GRADIENT, miez) > 0
-    _verifica_rezolutie(mm_pe_px, **{"Linia": latime_mm})
+    _verifica_rezolutie(mm_pe_px, **{"The line": latime_mm})
     taiat = cv2.dilate(taiat.astype(np.uint8), _elipsa_mm(latime_mm, mm_pe_px)).astype(bool)
     return ~(taiat & zona)
 
@@ -472,7 +472,7 @@ def _raze_adaptive(
     ).astype(np.int64)
     pozitii = np.searchsorted(divizori, capacitate, side="right") - 1
     if np.any(pozitii < 0):
-        raise ReglajImposibil("Miezul radial este prea mic pentru fantă şi punte.")
+        raise ReglajImposibil("The radial hub is too small for the opening and the web.")
     return divizori[np.clip(pozitii, 0, divizori.size - 1)]
 
 
@@ -500,20 +500,20 @@ def centru_automat_raze(
     from the left and 1/2 from the top.
     """
     if camp.ndim != 2 or camp.shape != subiect.shape:
-        raise ValueError("Câmpul şi subiectul trebuie să aibă aceeaşi mărime.")
+        raise ValueError("The field and the subject must be the same size.")
     if not 6 <= int(numar_raze) <= 192:
-        raise ReglajImposibil("Numărul de raze trebuie să fie între 6 şi 192.")
+        raise ReglajImposibil("The number of rays must be between 6 and 192.")
     if celula_mm < fanta_min_mm + punte_min_mm:
-        raise ReglajImposibil("Celula radială nu poate ţine fanta şi puntea cerute.")
+        raise ReglajImposibil("The radial cell cannot hold the required opening and web.")
     if not np.isfinite(diametru_miez_mm) or diametru_miez_mm <= 0:
-        raise ReglajImposibil("Diametrul miezului radial trebuie să fie pozitiv.")
+        raise ReglajImposibil("The radial hub diameter must be positive.")
     diametru_minim = (fanta_min_mm + punte_min_mm) / np.pi
     if diametru_miez_mm < diametru_minim:
         raise ReglajImposibil(
-            f"Diametrul miezului radial trebuie să fie de cel puţin {diametru_minim:.2f} mm."
+            f"The radial hub diameter must be at least {diametru_minim:.2f} mm."
         )
     if not 0 <= prag_lumina < 1:
-        raise ReglajImposibil("Pragul de lumină trebuie să fie între 0 şi 1.")
+        raise ReglajImposibil("The light threshold must be between 0 and 1.")
 
     h, w = camp.shape
     raza_miez_px = diametru_miez_mm / (2 * mm_pe_px)
@@ -594,21 +594,21 @@ def raze(
     possible cuts begin at its boundary rather than moving it implicitly.
     """
     if not 6 <= int(numar_raze) <= 192:
-        raise ReglajImposibil("Numărul de raze trebuie să fie între 6 şi 192.")
+        raise ReglajImposibil("The number of rays must be between 6 and 192.")
     if celula_mm < fanta_min_mm + punte_min_mm:
-        raise ReglajImposibil("Celula radială nu poate ţine fanta şi puntea cerute.")
+        raise ReglajImposibil("The radial cell cannot hold the required opening and web.")
     if not np.isfinite(diametru_miez_mm) or diametru_miez_mm <= 0:
-        raise ReglajImposibil("Diametrul miezului radial trebuie să fie pozitiv.")
+        raise ReglajImposibil("The radial hub diameter must be positive.")
     diametru_minim = (fanta_min_mm + punte_min_mm) / np.pi
     if diametru_miez_mm < diametru_minim:
         raise ReglajImposibil(
-            f"Diametrul miezului radial trebuie să fie de cel puţin {diametru_minim:.2f} mm."
+            f"The radial hub diameter must be at least {diametru_minim:.2f} mm."
         )
     if not 0 <= centru_x <= 1 or not 0 <= centru_y <= 1:
-        raise ReglajImposibil("Centrul razelor trebuie să fie în fotografie.")
+        raise ReglajImposibil("The centre of the rays must be inside the photograph.")
     if not 0 <= prag_lumina < 1:
-        raise ReglajImposibil("Pragul de lumină trebuie să fie între 0 şi 1.")
-    _verifica_rezolutie(mm_pe_px, **{"Puntea": punte_min_mm, "Fanta": fanta_min_mm})
+        raise ReglajImposibil("The light threshold must be between 0 and 1.")
+    _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm, "The opening": fanta_min_mm})
     h, w = camp.shape
     yy, xx = np.mgrid[0:h, 0:w]
     dx = xx - centru_x * (w - 1)
@@ -710,10 +710,10 @@ def sablon(
     browser performs its exact connectivity validation.
     """
     if camp.shape != subiect.shape:
-        raise ValueError("Câmpul şi masca subiectului trebuie să aibă aceeaşi mărime.")
+        raise ValueError("The field and the subject mask must be the same size.")
     if not 0.0 <= prag <= 1.0 or not 0.0 <= contur <= 1.0:
-        raise ReglajImposibil("Pragul şi conturul trebuie să fie între 0 şi 1.")
-    _verifica_rezolutie(mm_pe_px, **{"Puntea": punte_min_mm, "Fanta": fanta_min_mm})
+        raise ReglajImposibil("The threshold and the contour must be between 0 and 1.")
+    _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm, "The opening": fanta_min_mm})
 
     subiect = subiect.astype(bool)
     intunecat = (camp >= prag) & subiect
@@ -756,7 +756,7 @@ def _cap_din_subiect(subiect: np.ndarray) -> tuple[float, float, float]:
     """
     ys, xs = np.nonzero(subiect)
     if xs.size == 0:
-        raise ReglajImposibil("Nu pot aşeza aureola fără un subiect detectat.")
+        raise ReglajImposibil("The halo cannot be placed without a detected subject.")
 
     sus, jos = int(ys.min()), int(ys.max())
     inaltime = max(1, jos - sus + 1)
@@ -800,22 +800,22 @@ def sablon_icoana(
     ``True`` always means retained material.
     """
     if camp.ndim != 2 or camp.shape != subiect.shape:
-        raise ValueError("Câmpul şi masca subiectului trebuie să aibă aceeaşi mărime.")
+        raise ValueError("The field and the subject mask must be the same size.")
     if not 0.0 <= prag <= 1.0 or not 0.0 <= detaliu <= 1.0:
-        raise ReglajImposibil("Pragul şi detaliul icoanei trebuie să fie între 0 şi 1.")
+        raise ReglajImposibil("The icon threshold and detail must be between 0 and 1.")
     if latime_linie_mm <= 0 or simplificare_mm < 0:
-        raise ReglajImposibil("Linia icoanei trebuie să fie pozitivă, iar simplificarea nu poate fi negativă.")
+        raise ReglajImposibil("The icon line must be positive, and the simplification cannot be negative.")
     if not 0.75 <= scala_aureola <= 1.6:
-        raise ReglajImposibil("Mărimea aureolei trebuie să fie între 75% şi 160%.")
+        raise ReglajImposibil("The halo size must be between 75% and 160%.")
     _verifica_rezolutie(mm_pe_px, **{
-        "Puntea": punte_min_mm,
-        "Fanta": fanta_min_mm,
-        "Linia": max(latime_linie_mm, fanta_min_mm),
+        "The web": punte_min_mm,
+        "The opening": fanta_min_mm,
+        "The line": max(latime_linie_mm, fanta_min_mm),
     })
 
     zona = subiect.astype(bool)
     if not zona.any():
-        raise ReglajImposibil("Nu pot construi o icoană fără un subiect detectat.")
+        raise ReglajImposibil("An icon cannot be built without a detected subject.")
 
     # Smooth only at the requested physical scale.  This removes painted or
     # photographic grain while preserving the large folds that define an icon.
@@ -915,10 +915,10 @@ def portret_grafic(
     eyes, brows, nose, mouth, beard and folds from otherwise light skin.
     """
     if camp.shape != subiect.shape:
-        raise ValueError("Câmpul şi masca subiectului trebuie să aibă aceeaşi mărime.")
+        raise ValueError("The field and the subject mask must be the same size.")
     if not 0.0 <= prag <= 1.0 or not 0.0 <= detaliu <= 1.0:
-        raise ReglajImposibil("Pragul şi detaliul trebuie să fie între 0 şi 1.")
-    _verifica_rezolutie(mm_pe_px, **{"Puntea": punte_min_mm})
+        raise ReglajImposibil("The threshold and the detail must be between 0 and 1.")
+    _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm})
     zona = subiect.astype(bool)
     material = (camp >= prag) & zona
 
@@ -964,15 +964,15 @@ def lamele(
     """
     if pas_mm < punte_min_mm + fanta_min_mm:
         raise ReglajImposibil(
-            f"Un pas de {pas_mm} mm nu poate ţine o punte de {punte_min_mm} mm "
-            f"şi o fantă de {fanta_min_mm} mm; foloseşte cel puţin "
+            f"A pitch of {pas_mm} mm cannot hold a web of {punte_min_mm} mm "
+            f"and an opening of {fanta_min_mm} mm; use at least "
             f"{punte_min_mm + fanta_min_mm:.2f} mm."
         )
-    _verifica_rezolutie(mm_pe_px, **{"Puntea": punte_min_mm, "Fanta": fanta_min_mm})
+    _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm, "The opening": fanta_min_mm})
     if unghi is None:
         unghi = 0.0 if orizontal else 90.0
     if not np.isfinite(unghi) or not -90.0 <= unghi <= 90.0:
-        raise ReglajImposibil("Unghiul lamelelor trebuie să fie între -90 şi 90 de grade.")
+        raise ReglajImposibil("The slat angle must be between -90 and 90 degrees.")
 
     # Preserve the exact old horizontal/vertical paths. Apart from being
     # faster, this keeps existing project output bit-for-bit stable.
@@ -1018,7 +1018,7 @@ def lamele(
     punte_max = (pas_mm - fanta_min_mm) / mm_pe_px
     if pas < 2:
         raise ReglajImposibil(
-            f"Un pas de {pas_mm} mm iese sub doi pixeli la rezoluţia asta."
+            f"A pitch of {pas_mm} mm spans fewer than two pixels at this resolution."
         )
 
     numar = max(1, int(latime // pas))
@@ -1073,14 +1073,14 @@ def hasura(
     zona: np.ndarray | None = None,
 ) -> np.ndarray:
     """Short back-lit slots: light tone is cut, dark tone remains plate."""
-    for nume, valoare in (("Rândurile", pas_rand_mm), ("Celulele", celula_mm)):
+    for nume, valoare in (("Rows", pas_rand_mm), ("Cells", celula_mm)):
         if valoare < fanta_min_mm + punte_min_mm:
             raise ReglajImposibil(
-                f"{nume} la {valoare} mm nu pot ţine o fantă de {fanta_min_mm} mm "
-                f"şi o punte de {punte_min_mm} mm; foloseşte cel puţin "
+                f"{nume} of {valoare} mm cannot hold an opening of {fanta_min_mm} mm "
+                f"and a web of {punte_min_mm} mm; use at least "
                 f"{fanta_min_mm + punte_min_mm:.2f} mm."
             )
-    _verifica_rezolutie(mm_pe_px, **{"Puntea": punte_min_mm, "Fanta": fanta_min_mm})
+    _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm, "The opening": fanta_min_mm})
     inaltime, latime = camp.shape
     pas_rand = pas_rand_mm / mm_pe_px
     celula = celula_mm / mm_pe_px
@@ -1088,7 +1088,7 @@ def hasura(
     lungime_max = (celula_mm - punte_min_mm) / mm_pe_px
     latime_fanta = max(fanta_min, (pas_rand_mm - punte_min_mm) / mm_pe_px)
     if pas_rand < 2 or celula < 2:
-        raise ReglajImposibil("Reţeaua de trăsături iese sub doi pixeli la rezoluţia asta.")
+        raise ReglajImposibil("The mark grid spans fewer than two pixels at this resolution.")
 
     rad = np.radians(unghi)
     cos, sin = np.cos(rad), np.sin(rad)
@@ -1130,7 +1130,7 @@ def hasura(
     taiat = (np.abs(du) <= jumatate) & (np.abs(dv) <= latime_fanta / 2) & (jumatate > 0)
     if zona is not None:
         if zona.shape != camp.shape:
-            raise ValueError("Zona de haşură trebuie să aibă aceeaşi mărime ca tonul.")
+            raise ValueError("The hatch zone must be the same size as the tone.")
         taiat &= zona.astype(bool)
     return ~taiat
 
@@ -1161,26 +1161,26 @@ def puncte_variabile(
     from behind.
     """
     if camp.ndim != 2:
-        raise ValueError("Câmpul de puncte trebuie să aibă două dimensiuni.")
+        raise ValueError("The dot field must be two-dimensional.")
     if zona is not None and zona.shape != camp.shape:
-        raise ValueError("Zona de puncte trebuie să aibă aceeaşi mărime ca tonul.")
+        raise ValueError("The dot zone must be the same size as the tone.")
     if pas_mm < fanta_min_mm + punte_min_mm:
         raise ReglajImposibil(
-            f"Un pas de {pas_mm:g} mm nu poate ţine un punct de "
-            f"{fanta_min_mm:g} mm şi o punte de {punte_min_mm:g} mm; "
-            f"foloseşte cel puţin {fanta_min_mm + punte_min_mm:.2f} mm."
+            f"A pitch of {pas_mm:g} mm cannot hold a dot of "
+            f"{fanta_min_mm:g} mm and a web of {punte_min_mm:g} mm; "
+            f"use at least {fanta_min_mm + punte_min_mm:.2f} mm."
         )
     if diametru_max_mm < fanta_min_mm:
         raise ReglajImposibil(
-            "Diametrul maxim al punctului trebuie să fie cel puţin cât deschiderea minimă."
+            "The maximum dot diameter must be at least the minimum opening."
         )
     if not np.isfinite(gamma) or gamma <= 0:
-        raise ReglajImposibil("Separarea tonurilor pentru puncte trebuie să fie pozitivă.")
+        raise ReglajImposibil("The tone separation for dots must be positive.")
     if not 0.0 <= prag < 1.0:
-        raise ReglajImposibil("Pragul punctelor trebuie să fie între 0 şi 1.")
+        raise ReglajImposibil("The dot threshold must be between 0 and 1.")
     if not np.isfinite(unghi) or not -90.0 <= unghi <= 90.0:
-        raise ReglajImposibil("Unghiul reţelei de puncte trebuie să fie între -90 şi 90 de grade.")
-    _verifica_rezolutie(mm_pe_px, **{"Puntea": punte_min_mm, "Punctul": fanta_min_mm})
+        raise ReglajImposibil("The dot grid angle must be between -90 and 90 degrees.")
+    _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm, "The dot": fanta_min_mm})
 
     inaltime, latime = camp.shape
     pas_px = pas_mm / mm_pe_px
@@ -1192,8 +1192,8 @@ def puncte_variabile(
     diametru_max_px = diametru_max_fizic_mm / mm_pe_px
     if diametru_max_px < fanta_px:
         raise ReglajImposibil(
-            "Pasul punctelor nu lasă loc pentru deschiderea şi puntea configurate "
-            "la rezoluţia curentă; măreşte pasul punctelor."
+            "The dot pitch leaves no room for the configured opening and web "
+            "at the current resolution; increase the dot pitch."
         )
 
     # One sample represents one dot, so smooth at a fraction of the pitch. This
