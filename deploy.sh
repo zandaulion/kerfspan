@@ -5,8 +5,16 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_ROOT="${XDG_CONFIG_HOME:-${HOME}/.config}"
-APP_CONFIG_DIR="${CONFIG_ROOT}/stencil-cnc"
-ENV_FILE="${STENCIL_CNC_ENV_FILE:-${APP_CONFIG_DIR}/stencil-cnc.env}"
+APP_CONFIG_DIR="${CONFIG_ROOT}/kerfloom"
+# Older installations kept their settings under the project's first name; keep
+# using that file where it exists rather than starting a second one.
+if [[ -n "${KERFLOOM_ENV_FILE:-${STENCIL_CNC_ENV_FILE:-}}" ]]; then
+  ENV_FILE="${KERFLOOM_ENV_FILE:-${STENCIL_CNC_ENV_FILE}}"
+elif [[ -f "${CONFIG_ROOT}/stencil-cnc/stencil-cnc.env" ]]; then
+  ENV_FILE="${CONFIG_ROOT}/stencil-cnc/stencil-cnc.env"
+else
+  ENV_FILE="${APP_CONFIG_DIR}/kerfloom.env"
+fi
 QUADLET_DIR="${CONFIG_ROOT}/containers/systemd"
 QUADLET_FILE="${QUADLET_DIR}/stencil-cnc.container"
 QUADLET_ANALIZA="${QUADLET_DIR}/stencil-cnc-analiza.container"
@@ -21,7 +29,7 @@ for executable in npm podman systemctl curl install; do
 done
 
 if [[ ! -f "$ENV_FILE" ]]; then
-  install -d -m 0700 "$APP_CONFIG_DIR"
+  install -d -m 0700 "$(dirname "$ENV_FILE")"
   install -m 0600 "$PROJECT_ROOT/site.env.example" "$ENV_FILE"
   echo "Created ${ENV_FILE}. Set ADMIN_TOKEN, then run deploy.sh again." >&2
   exit 2
@@ -69,7 +77,11 @@ podman build \
 install -d -m 0755 "$QUADLET_DIR"
 install -m 0644 "$PROJECT_ROOT/deploy/quadlet/stencil-cnc.network" "$QUADLET_RETEA"
 install -m 0644 "$PROJECT_ROOT/deploy/quadlet/stencil-cnc-analiza.container" "$QUADLET_ANALIZA"
-install -m 0644 "$PROJECT_ROOT/deploy/quadlet/stencil-cnc.container" "$QUADLET_FILE"
+# The unit names the settings file deploy.sh actually uses, wherever that is.
+sed "s|^EnvironmentFile=.*|EnvironmentFile=${ENV_FILE}|" \
+  "$PROJECT_ROOT/deploy/quadlet/stencil-cnc.container" > "${QUADLET_FILE}.tmp"
+install -m 0644 "${QUADLET_FILE}.tmp" "$QUADLET_FILE"
+rm -f "${QUADLET_FILE}.tmp"
 systemctl --user daemon-reload
 # No `systemctl enable` here: quadlet generates these units, and a generated
 # unit cannot be enabled. `[Install] WantedBy=default.target` inside each

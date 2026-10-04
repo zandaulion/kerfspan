@@ -1,16 +1,22 @@
 # Deployment and access boundary
 
-Kerfloom runs as two rootless containers on a private Podman network.
+This is the production layout: two rootless Podman containers managed by
+systemd (Quadlet), behind Caddy. For a simpler start, see the Quick start in the
+[main README](../README.md#quick-start), which uses `compose.yaml`.
+
 Express serves the PWA and invite API from container port 3000 and proxies
 photograph conversion to the unexposed analysis container. The web Quadlet is
-published only on `127.0.0.1:8101`. Caddy is the sole origin, and cloudflared
-reaches a separate loopback-only Caddy listener for
-`stencil-cnc.zandaulion.com`.
+published only on `127.0.0.1:8101`. Caddy is the sole origin; in the example
+setup, an outbound Cloudflare Tunnel reaches a separate loopback-only Caddy
+listener for `kerfloom.example.com`. The containers and their data volume keep
+their original `stencil-cnc` names so existing installations upgrade in place.
 
 ## First installation
 
 1. Run `./deploy.sh` once. It creates
-   `~/.config/stencil-cnc/stencil-cnc.env` with mode 0600 and stops.
+   `~/.config/kerfloom/kerfloom.env` with mode 0600 and stops. (An existing
+   `~/.config/stencil-cnc/stencil-cnc.env` from an older installation is used
+   instead if present.)
 2. Generate an admin secret with `openssl rand -hex 32`, put it in that file as
    `ADMIN_TOKEN`, then copy the same value to a root-owned Caddy environment
    file as `STENCIL_CNC_ADMIN_TOKEN`. Do not put either secret in this repo.
@@ -18,9 +24,10 @@ reaches a separate loopback-only Caddy listener for
    The public block uses port 8017 by default; choose a free, SELinux-labelled
    HTTP port if 8017 is already allocated and set `STENCIL_CNC_CADDY_PORT` for
    Caddy.
-4. Add a Cloudflare Tunnel ingress mapping for
-   `stencil-cnc.zandaulion.com` to `http://127.0.0.1:8017` (or the selected
-   Caddy port). The tunnel is outbound; do not publish 8101 in the firewall.
+4. Point your hostname at that listener: for example, a Cloudflare Tunnel
+   ingress mapping `kerfloom.example.com` to `http://127.0.0.1:8017` (or the
+   selected Caddy port). A tunnel is outbound; do not publish 8101 in the
+   firewall.
 5. Validate and reload Caddy, then run `./deploy.sh` again. It runs the test
    suite, builds the image, installs the user Quadlet, restarts it, and waits
    for `/api/health`.
@@ -67,20 +74,23 @@ key-rotation procedure are in [RESTORE.md](RESTORE.md).
 
 ## Invite console
 
-The shared console needs this entry in `pwa-invite-console/apps.json`:
+`./admin.sh` covers every administration task from the host. Optionally, the
+[pwa-invite-console](https://github.com/zandaulion/pwa-invite-console) gives the
+same functions a web interface; it needs an entry like this in its
+`apps.json`:
 
 ```json
 {
-  "id": "stencil-cnc",
+  "id": "kerfloom",
   "name": "Kerfloom",
   "api": "/stencil-cnc",
   "push": false,
-  "message": "Salut! Îți trimit acces la Kerfloom — transformă fotografii și desene în șabloane conectate, gata de verificat și exportat pentru CNC.\\n\\nDeschide linkul:\\n{link}\\n\\nCodul este valabil {days} zile și înregistrează un singur dispozitiv."
+  "message": "Here is your access to Kerfloom.\\n\\nOpen the link:\\n{link}\\n\\nThe code is valid for {days} days and registers one device."
 }
 ```
 
 Redeploy the console after changing the JSON. Its page contains no credential.
-The tailnet-only Caddy handle injects `X-Admin-Token`; the application compares
+The private Caddy handle injects `X-Admin-Token`; the application compares
 it in constant time with `ADMIN_TOKEN` and fails closed when the secret is not
 configured.
 

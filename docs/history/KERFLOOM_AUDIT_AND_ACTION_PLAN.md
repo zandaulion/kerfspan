@@ -1,6 +1,6 @@
 # Kerfloom: workflow audit and implementation action plan
 
-Date: 16 September 2026. Repository examined: `~/projects/stencil-cnc`, commit `87429e2`.
+Date: 16 September 2026. Repository examined: this repository, commit `87429e2`. Line references point at that commit, so they may have moved since.
 
 
 ## Start here: handoff to Sol
@@ -149,7 +149,7 @@ The UI defines the minimum as finished metal remaining after kerf, but the hard 
 
 Synthetic reproduction: a 100 × 100 mm panel with two rectangular openings separated by 4 mm, a 2 mm kerf, and a 3 mm minimum finished web. The simulated web is 2 mm, but validation returns `valid: true`, no errors, and structural warnings.
 
-Evidence: [gap check](~/projects/stencil-cnc/web/core/validation.js:182), [UI definition](~/projects/stencil-cnc/web/index.html:223), [editor validation options](~/projects/stencil-cnc/web/editor.js:1229).
+Evidence: [gap check](../../web/core/validation.js#L182), [UI definition](../../web/index.html#L223), [editor validation options](../../web/editor.js#L1229).
 
 Resolve the intended kerf/CAM dimensional model first. Then make generation, repairs, preview, and hard validation agree. Under the current erosion model, either measure after kerf or include kerf in the pre-cut spacing requirement. Do not merely promote every morphological warning into an error: rounded edges and raster uncertainty need different treatment.
 
@@ -159,7 +159,7 @@ Using the editor’s configuration (`anchorBoundary:false`, `requireAnchored:fal
 
 The connectivity helper calls unanchored components “islands.” Validation interprets those as disconnected minimum-width cores, even though this editor mode intentionally requires no external anchor.
 
-Evidence: [island definition](~/projects/stencil-cnc/web/core/connectivity.js:58), [warning condition](~/projects/stencil-cnc/web/core/validation.js:232).
+Evidence: [island definition](../../web/core/connectivity.js#L58), [warning condition](../../web/core/validation.js#L232).
 
 This explains a baseline false warning and can inflate larger counts; it does not prove all warnings on earlier user images were false. Establish the correct main-core/baseline connectivity before evaluating weakening. Add a solid-panel no-warning regression test.
 
@@ -173,7 +173,7 @@ Three related sequences matter:
 
 The first two were reproduced in isolated sync-module harnesses. The third is confirmed in source, not a production incident claim.
 
-Evidence: [acknowledgement and outbox deletion](~/projects/stencil-cnc/web/project-sync.js:260), [checkpoint sync](~/projects/stencil-cnc/web/editor.js:2895), [export artifact sync](~/projects/stencil-cnc/web/editor.js:4908), [conflict status](~/projects/stencil-cnc/web/project-sync.js:197), [download metadata](~/projects/stencil-cnc/web/project-sync.js:137).
+Evidence: [acknowledgement and outbox deletion](../../web/project-sync.js#L260), [checkpoint sync](../../web/editor.js#L2895), [export artifact sync](../../web/editor.js#L4908), [conflict status](../../web/project-sync.js#L197), [download metadata](../../web/project-sync.js#L137).
 
 Recommendation: one save/revision service, immutable operation generations, compare-before-acknowledging, response-authoritative revisions, and per-project write serialization across callers/tabs. [MDN Web Locks](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API) describes coordination across same-origin tabs; this is one implementation option, not the only one.
 
@@ -181,7 +181,7 @@ Recommendation: one save/revision service, immutable operation generations, comp
 
 IndexedDB contains one origin-wide project library/outbox without a workspace key. Library sync treats cached projects missing from the authenticated server workspace as data to recover/upload. The isolated reproduction populated two workspace-A projects and returned an empty workspace-B library; both A projects were uploaded into B.
 
-Evidence: [storage namespace](~/projects/stencil-cnc/web/storage.js:1), [automatic recovery/upload](~/projects/stencil-cnc/web/project-sync.js:326), [authentication handoff](~/projects/stencil-cnc/web/app.js:116).
+Evidence: [storage namespace](../../web/storage.js#L1), [automatic recovery/upload](../../web/project-sync.js#L326), [authentication handoff](../../web/app.js#L116).
 
 This is a conditional privacy defect for switching workspace identity in the same browser, not evidence that the server lets arbitrary outsiders read projects. Scope local data and queued work to verified identity; require a deliberate import decision for legacy unowned data. Keep hostname migration deferred as requested.
 
@@ -189,7 +189,7 @@ This is a conditional privacy defect for switching workspace identity in the sam
 
 Candidate thumbnails are generated from final design geometry, but their saved payload excludes manufacturing repairs. Restore explicitly clears those repairs.
 
-Evidence: [candidate capture](~/projects/stencil-cnc/web/editor.js:4045), [candidate restore](~/projects/stencil-cnc/web/editor.js:4095).
+Evidence: [candidate capture](../../web/editor.js#L4045), [candidate restore](../../web/editor.js#L4095).
 
 A creative snapshot must preserve the complete appearance-producing state. Validation can be rerun after restore; silently losing visible repairs is different from invalidating a validation certificate. Add a repaired-candidate round-trip test comparing final geometry, not only controls.
 
@@ -197,40 +197,40 @@ Local implementation status: K08 now stores the repair layer and final-geometry 
 
 ### F6. Some physical and editing feedback is misleading — confirmed in code
 
-- Ruler ticks remain the original 1250 × 2500 labels: [HTML rulers](~/projects/stencil-cnc/web/index.html:1024). The separate [scale indicator](~/projects/stencil-cnc/web/editor.js:2307) does update. Generate ticks from sheet units and viewport transforms.
-- Text-field undo is intercepted before editable-target handling: [keyboard handler](~/projects/stencil-cnc/web/editor.js:6178).
-- Icon acts as an apply-style command in the tool rail: [tool behavior](~/projects/stencil-cnc/web/editor.js:5015).
-- Permanent deletion describes a device-only effect but invokes server deletion: [confirmation and deletion](~/projects/stencil-cnc/web/editor.js:3317).
+- Ruler ticks remain the original 1250 × 2500 labels: [HTML rulers](../../web/index.html#L1024). The separate [scale indicator](../../web/editor.js#L2307) does update. Generate ticks from sheet units and viewport transforms.
+- Text-field undo is intercepted before editable-target handling: [keyboard handler](../../web/editor.js#L6178).
+- Icon acts as an apply-style command in the tool rail: [tool behavior](../../web/editor.js#L5015).
+- Permanent deletion describes a device-only effect but invokes server deletion: [confirmation and deletion](../../web/editor.js#L3317).
 
 These are small interfaces with disproportionate effects on confidence. The deletion wording deserves immediate attention; the others should be fixed alongside interaction regression tests.
 
 ### F7. Manufacturing semantics and precision need an explicit contract — confirmed design gaps
 
-The current profile has no material, stock thickness, machine/consumable, or verification provenance: [profile model](~/projects/stencil-cnc/web/core/project.js:17), [disabled selector](~/projects/stencil-cnc/web/index.html:210). Global opening/web floors are enforced in [editor constraints](~/projects/stencil-cnc/web/editor.js:247).
+The current profile has no material, stock thickness, machine/consumable, or verification provenance: [profile model](../../web/core/project.js#L17), [disabled selector](../../web/index.html#L210). Global opening/web floors are enforced in [editor constraints](../../web/editor.js#L247).
 
-Generators reserve kerf allowance; validation erodes retained metal; export emits un-eroded contours while the interface says to leave compensation to CAM. Depending on the CAM offset setting, physical output can differ from the erosion preview. This is an unresolved contract, not proof every exported file cuts incorrectly. See [export controls](~/projects/stencil-cnc/web/index.html:885).
+Generators reserve kerf allowance; validation erodes retained metal; export emits un-eroded contours while the interface says to leave compensation to CAM. Depending on the CAM offset setting, physical output can differ from the erosion preview. This is an unresolved contract, not proof every exported file cuts incorrectly. See [export controls](../../web/index.html#L885).
 
-SVG traces pixel edges and removes collinear points, not staircase curvature; DXF uses the same contour geometry: [SVG tracing](~/projects/stencil-cnc/web/core/svg.js:17), [DXF polylines](~/projects/stencil-cnc/web/core/dxf.js:83). Analysis targets three pixels per smallest limit and caps width at 2600: [resolution policy](~/projects/stencil-cnc/analiza/app.py:58). For a 1250 mm analysis width with a 2 mm minimum, 1875 cells correspond to roughly 0.667 mm per cell. Final effective spacing must be calculated from actual mask dimensions and placement.
+SVG traces pixel edges and removes collinear points, not staircase curvature; DXF uses the same contour geometry: [SVG tracing](../../web/core/svg.js#L17), [DXF polylines](../../web/core/dxf.js#L83). Analysis targets three pixels per smallest limit and caps width at 2600: [resolution policy](../../analiza/app.py#L58). For a 1250 mm analysis width with a 2 mm minimum, 1875 cells correspond to roughly 0.667 mm per cell. Final effective spacing must be calculated from actual mask dimensions and placement.
 
 Proposed handoff: desired dimensions, units, selected/versioned cutting profile, compensation responsibility, effective resolution/tolerance, validation revision, remaining advisories, and final contour count. If curve fitting is added, revalidate the fitted vectors, not only the source raster. Verify exports in the actual target CAM before promising machining accuracy.
 
 ### F8. Mobile and accessibility need a workflow pass — measured layout plus code findings
 
-The local 390 × 844 layout has about 1259 px of controls before a 430 px canvas, with the Problems pane after it. Long filter controls increase the tune-scroll-inspect loop. Current layout evidence: [responsive styling](~/projects/stencil-cnc/web/app.css:4639).
+The local 390 × 844 layout has about 1259 px of controls before a 430 px canvas, with the Problems pane after it. Long filter controls increase the tune-scroll-inspect loop. Current layout evidence: [responsive styling](../../web/app.css#L4639).
 
-Primary orange `#e45f35` with white normal-size text calculates to about 3.51:1: [color](~/projects/stencil-cnc/web/app.css:11), [button text](~/projects/stencil-cnc/web/app.css:492). Darken the fill or change the label color to meet the intended contrast criterion.
+Primary orange `#e45f35` with white normal-size text calculates to about 3.51:1: [color](../../web/app.css#L11), [button text](../../web/app.css#L492). Darken the fill or change the label color to meet the intended contrast criterion.
 
 Support selection, global character shortcuts, and tab keyboard handling need alternatives. No active-pointer-ID ownership or touch-action policy was found for drawing; browser gesture cancellation and two-finger interaction still require physical Android/iOS testing. Do not claim a complete WCAG audit or confirmed pinch bug from source inspection alone.
 
 ### F9. Sync efficiency and durability have further gaps — code-confirmed risks, not demonstrated production losses
 
-Every autosave rebuilds a bundle containing the source photo, retained exports, and checkpoints; startup awaits the full library: [bundle creation](~/projects/stencil-cnc/web/project-sync.js:65), [startup](~/projects/stencil-cnc/web/editor.js:6288). Store immutable assets once, sync state separately, and fetch heavy data on demand. Actual mobile throughput was not benchmarked.
+Every autosave rebuilds a bundle containing the source photo, retained exports, and checkpoints; startup awaits the full library: [bundle creation](../../web/project-sync.js#L65), [startup](../../web/editor.js#L6288). Store immutable assets once, sync state separately, and fetch heavy data on demand. Actual mobile throughput was not benchmarked.
 
-Downloaded bundle replacement clears old assets and writes replacements in separate operations, with revision recorded before all imports complete: [cache replacement](~/projects/stencil-cnc/web/project-sync.js:108). Stage and atomically commit the new cache. [IndexedDB transaction guidance](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB) supports combining replacement operations in one transaction.
+Downloaded bundle replacement clears old assets and writes replacements in separate operations, with revision recorded before all imports complete: [cache replacement](../../web/project-sync.js#L108). Stage and atomically commit the new cache. [IndexedDB transaction guidance](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB) supports combining replacement operations in one transaction.
 
 The 1.2-second save debounce lacks a visibility-change local flush. An edit immediately followed by mobile app backgrounding needs a dedicated test. [MDN’s beforeunload guidance](https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event) explains why relying on that event is unreliable on phones.
 
-Server file replacement and SQLite commit are separate crash boundaries: [server save](~/projects/stencil-cnc/server/projects.js:203). Postcommit backup cleanup shares rollback handling, which also deserves correction. Immutable revision files plus transactional metadata pointers would simplify recovery. [SQLite backup guidance](https://www.sqlite.org/backup.html) and [durability settings](https://www.sqlite.org/pragma.html#pragma_synchronous) inform this assessment; no host crash test was run.
+Server file replacement and SQLite commit are separate crash boundaries: [server save](../../server/projects.js#L203). Postcommit backup cleanup shares rollback handling, which also deserves correction. Immutable revision files plus transactional metadata pointers would simplify recovery. [SQLite backup guidance](https://www.sqlite.org/backup.html) and [durability settings](https://www.sqlite.org/pragma.html#pragma_synchronous) inform this assessment; no host crash test was run.
 
 ### F10. Security operations and ownership need to match server-first projects
 
@@ -238,16 +238,16 @@ Preserve the good fundamentals: authenticated workspace-derived server queries, 
 
 Remaining concerns:
 
-- Encryption can derive from an admin secret if no dedicated key is set; changing that secret without re-encryption breaks access. Bundles do not identify a key version. [Key configuration](~/projects/stencil-cnc/server/index.js:78). Production key selection was not inspected.
-- Backup and restore requirements are documented, but no external backup schedule or successful restore was verified. [Deployment recovery instructions](~/projects/stencil-cnc/deploy/README.md:59). Verify database, bundles, and keys recover together.
-- Device cookies last up to 400 days; server tokens do not have their own expiry/renewal check. Logout clears the cookie without invalidating the token. [Token validation](~/projects/stencil-cnc/server/auth.js:299), [logout](~/projects/stencil-cnc/server/index.js:381). Choose a low-friction trusted-device lifecycle with visible revocation rather than arbitrary disruptive short timeouts.
-- Outgoing shares are authorized by device rather than workspace. [Share ownership](~/projects/stencil-cnc/server/shares.js:289). Linked-device share management should follow the project’s ownership boundary.
+- Encryption can derive from an admin secret if no dedicated key is set; changing that secret without re-encryption breaks access. Bundles do not identify a key version. [Key configuration](../../server/index.js#L78). Production key selection was not inspected.
+- Backup and restore requirements are documented, but no external backup schedule or successful restore was verified. [Deployment recovery instructions](../../deploy/README.md#L59). Verify database, bundles, and keys recover together.
+- Device cookies last up to 400 days; server tokens do not have their own expiry/renewal check. Logout clears the cookie without invalidating the token. [Token validation](../../server/auth.js#L299), [logout](../../server/index.js#L381). Choose a low-friction trusted-device lifecycle with visible revocation rather than arbitrary disruptive short timeouts.
+- Outgoing shares are authorized by device rather than workspace. [Share ownership](../../server/shares.js#L289). Linked-device share management should follow the project’s ownership boundary.
 
 ### F11. Repair and rendering interaction should communicate their limits
 
-Repairs are intentionally bounded and reject regressions; that is valuable. However, warning acceptance relies on location counts alongside core and pixel counts: [warning acceptance](~/projects/stencil-cnc/web/core/repairs.js:786). Segmentation can increase location count even if an important physical dimension improves. Consider minimum surviving width, affected physical area, connectivity, and visual-detail change together.
+Repairs are intentionally bounded and reject regressions; that is valuable. However, warning acceptance relies on location counts alongside core and pixel counts: [warning acceptance](../../web/core/repairs.js#L786). Segmentation can increase location count even if an important physical dimension improves. Consider minimum surviving width, affected physical area, connectivity, and visual-detail change together.
 
-Planning yields for painting and then runs synchronously: [repair planning](~/projects/stencil-cnc/web/editor.js:1535). A worker with cancelable requests would permit responsive progress and parameter changes. First measure representative small, large, and highly fragmented artwork; no timing claim is made here.
+Planning yields for painting and then runs synchronously: [repair planning](../../web/editor.js#L1535). A worker with cancelable requests would permit responsive progress and parameter changes. First measure representative small, large, and highly fragmented artwork; no timing claim is made here.
 
 ## Proposed user experience to discuss
 

@@ -1,7 +1,8 @@
-# Kerfloom is reached as:
-#   stencil-cnc.zandaulion.com -> Cloudflare Tunnel -> 127.0.0.1:8017
+# An example for running Kerfloom behind Caddy and an outbound tunnel:
+#   kerfloom.example.com -> Cloudflare Tunnel -> 127.0.0.1:8017 -> 127.0.0.1:8101
 # Change 8017 here and in the tunnel ingress if that listener is allocated.
-# TLS terminates at Cloudflare; this listener is loopback-only plain HTTP.
+# TLS terminates at the tunnel; this listener is loopback-only plain HTTP.
+# Without a tunnel, give Caddy the hostname instead and let it obtain TLS.
 :{$STENCIL_CNC_CADDY_PORT:8017} {
 	bind 127.0.0.1
 	encode zstd gzip
@@ -24,7 +25,7 @@
 	}
 }
 
-# Add this handle to the existing tailnet-only/private listener that serves
+# Optional: add this handle to a private (LAN- or VPN-only) listener that serves
 # pwa-invite-console. The console carries no secret. Caddy injects one from its
 # protected service environment, and it must equal ADMIN_TOKEN in the app env.
 handle /stencil-cnc/api/* {

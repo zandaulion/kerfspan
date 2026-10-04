@@ -1,0 +1,72 @@
+# Kerfloom: the web app and its photograph-analysis service.
+#
+#   cp site.env.example site.env       # then set ADMIN_TOKEN and PROJECT_ENCRYPTION_KEY
+#   docker compose up -d --build       # or: podman compose up -d --build
+#   ./admin.sh invite "My laptop"      # prints a one-time invite code
+#
+# Then open http://localhost:3000 and redeem the code. Other devices need
+# HTTPS in front of it; see "Quick start" in README.md.
+name: kerfloom
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Containerfile
+    image: localhost/kerfloom-web
+    env_file: site.env
+    environment:
+      DATA_DIR: /data
+      PORT: "3000"
+      BIND_HOST: 0.0.0.0
+      ANALIZA_URL: http://analysis:8000
+    # Loopback by default. Set KERFLOOM_BIND=0.0.0.0 only with a TLS reverse
+    # proxy or VPN in front: browsers refuse Kerfloom's sign-in over plain HTTP
+    # from another device anyway.
+    ports:
+      - "${KERFLOOM_BIND:-127.0.0.1}:${KERFLOOM_PORT:-3000}:3000"
+    volumes:
+      - kerfloom-data:/data
+    networks:
+      - default
+      - analysis
+    depends_on:
+      - analysis
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # No published port and no route out: only the web app can reach it.
+  analysis:
+    build:
+      context: .
+      dockerfile: deploy/Containerfile.analiza
+    image: localhost/kerfloom-analysis
+    environment:
+      MODEL_DIR: /app/models
+      LATIME_LUCRU: "900"
+    networks:
+      - analysis
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+volumes:
+  # Projects, encrypted, and the device database. Back it up together with
+  # PROJECT_ENCRYPTION_KEY: one without the other cannot be restored.
+  kerfloom-data:
+
+networks:
+  # Declared so podman-compose accepts it; Docker Compose creates it anyway.
+  default: {}
+  analysis:
+    internal: true

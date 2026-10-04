@@ -192,7 +192,7 @@ export function createApp(options = {}) {
     // healthy, so include a real (but non-revealing) database round trip.
     database.prepare('SELECT 1 AS ready').get();
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ ok: true, name: 'stencil-cnc', time: new Date().toISOString() });
+    res.json({ ok: true, name: 'kerfloom', time: new Date().toISOString() });
   });
 
   const redeem = (req, res) => {

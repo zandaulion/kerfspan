@@ -11,7 +11,9 @@ ContainerName=stencil-cnc
 PublishPort=127.0.0.1:8101:3000
 Volume=stencil-cnc-data:/data
 Network=stencil-cnc.network
-EnvironmentFile=%h/.config/stencil-cnc/stencil-cnc.env
+# deploy.sh replaces this with the settings file it uses
+# (~/.config/kerfloom/kerfloom.env, or an older installation's path).
+EnvironmentFile=%h/.config/kerfloom/kerfloom.env
 Environment=DATA_DIR=/data
 Environment=PORT=3000
 Environment=BIND_HOST=0.0.0.0

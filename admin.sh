@@ -5,7 +5,19 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_ROOT="${XDG_CONFIG_HOME:-${HOME}/.config}"
-ENV_FILE="${STENCIL_CNC_ENV_FILE:-${CONFIG_ROOT}/stencil-cnc/stencil-cnc.env}"
+# The first that exists: an explicit file, the compose setup's site.env, the
+# deploy.sh location, or the location older installations used.
+DEFAULT_API="http://127.0.0.1:8101"
+if [[ -n "${KERFLOOM_ENV_FILE:-${STENCIL_CNC_ENV_FILE:-}}" ]]; then
+  ENV_FILE="${KERFLOOM_ENV_FILE:-${STENCIL_CNC_ENV_FILE}}"
+elif [[ -f "${PROJECT_ROOT}/site.env" ]]; then
+  ENV_FILE="${PROJECT_ROOT}/site.env"
+  DEFAULT_API="http://127.0.0.1:${KERFLOOM_PORT:-3000}"
+elif [[ -f "${CONFIG_ROOT}/kerfloom/kerfloom.env" ]]; then
+  ENV_FILE="${CONFIG_ROOT}/kerfloom/kerfloom.env"
+else
+  ENV_FILE="${CONFIG_ROOT}/stencil-cnc/stencil-cnc.env"
+fi
 
 if [[ -r "$ENV_FILE" ]]; then
   set -a
@@ -14,7 +26,8 @@ if [[ -r "$ENV_FILE" ]]; then
   set +a
 fi
 
-ADMIN_API="${ADMIN_API:-http://127.0.0.1:8101}"
+# Read after the file, whose PORT is the container's, not the host's.
+ADMIN_API="${ADMIN_API:-${DEFAULT_API}}"
 
 pretty() { python3 -m json.tool 2>/dev/null || command cat; }
 json_label() {
@@ -52,8 +65,9 @@ usage: ./admin.sh <command>
   prune-devices        permanently delete revoked devices
   health               check service health
 
-The shared pwa-invite-console is the normal interface. This script is useful
-for first-install verification or recovery on the host.
+Run it on the host that runs Kerfloom; it talks to the loopback port. It reads
+ADMIN_TOKEN from site.env (compose) or ~/.config/kerfloom/kerfloom.env
+(deploy.sh); set ADMIN_API to reach a different address.
 USAGE
 }
 
