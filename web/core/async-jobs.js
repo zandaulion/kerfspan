@@ -10,6 +10,43 @@ export function isJobCancelled(error) {
 }
 
 /**
+ * Finds each transferable ArrayBuffer in a structured worker result exactly
+ * once. Geometry validation returns several large typed-array label maps; if
+ * they are cloned by postMessage, mobile browsers briefly need enough memory
+ * for both the worker and UI copies and can appear to hang at completion.
+ */
+export function collectTransferableBuffers(value) {
+  const buffers = new Set();
+  const visited = new Set();
+  const visit = (entry) => {
+    if (entry === null || typeof entry !== "object" || visited.has(entry)) return;
+    visited.add(entry);
+    if (entry instanceof ArrayBuffer) {
+      buffers.add(entry);
+      return;
+    }
+    if (ArrayBuffer.isView(entry)) {
+      if (entry.buffer instanceof ArrayBuffer) buffers.add(entry.buffer);
+      return;
+    }
+    if (entry instanceof Map) {
+      for (const [key, mapValue] of entry) {
+        visit(key);
+        visit(mapValue);
+      }
+      return;
+    }
+    if (entry instanceof Set) {
+      for (const setValue of entry) visit(setValue);
+      return;
+    }
+    for (const child of Object.values(entry)) visit(child);
+  };
+  visit(value);
+  return [...buffers];
+}
+
+/**
  * Runs one latest-wins module Worker job at a time. Terminating the Worker is
  * intentional: the geometry algorithms are CPU-bound and cannot observe an
  * AbortSignal while they own their thread. The monotonically increasing id is

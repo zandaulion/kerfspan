@@ -44,8 +44,9 @@ export const GEOMETRY_VALIDATION_MODEL_VERSION = 1;
  *   outsideIsRemoved?: boolean,
  *   geometryInterpretation?: 'finished-boundary-cam-v1'|'legacy-uncompensated-centerline-v1',
  * }} config
+ * @param {(phase:string, detail:string) => void} [report]
  */
-export function validateDesign(mask, config) {
+export function validateDesign(mask, config, report = () => {}) {
   assertMask(mask);
   if (!config || typeof config !== "object") throw new TypeError("Validation configuration is required");
   assertSheet(config.sheet);
@@ -65,6 +66,7 @@ export function validateDesign(mask, config) {
     anchorBoundary: config.anchorBoundary,
   };
   const issues = [];
+  report("connectivity", "Checking retained-material connectivity…");
   const initial = analyzeConnectivity(mask, connectivityOptions);
 
   if (initial.retainedPixels === 0) {
@@ -102,6 +104,7 @@ export function validateDesign(mask, config) {
   const postKerfMask = kerfLossMm > 0
     ? erodeMaskPhysical(mask, kerfLossMm / 2, config.sheet, { outsideIsRemoved: config.outsideIsRemoved })
     : { width: mask.width, height: mask.height, data: mask.data.slice() };
+  report("post-kerf", "Checking connectivity after the finished-edge simulation…");
   const postKerf = analyzeConnectivity(postKerfMask, connectivityOptions);
 
   if (initial.retainedPixels > 0 && postKerf.retainedPixels === 0) {
@@ -146,6 +149,7 @@ export function validateDesign(mask, config) {
   let removedMask = null;
   let removed = null;
   if (effectiveOpeningMm > 0 || minimumWebMm > 0) {
+    report("openings", "Checking minimum openings and separate cut regions…");
     removedMask = createMask(mask.width, mask.height);
     for (let index = 0; index < mask.data.length; index += 1) {
       if (mask.data[index] !== RETAINED) removedMask.data[index] = RETAINED;
@@ -236,6 +240,7 @@ export function validateDesign(mask, config) {
   let thinAreaZones = null;
   let thinPixelCount = 0;
   if (minimumWebMm > 0 && postKerf.retainedPixels > 0) {
+    report("webs", "Checking finished metal widths…");
     const webRadius = minimumWebMm / 2;
     minimumWebCoreMask = erodeMaskPhysical(postKerfMask, webRadius, config.sheet, {
       outsideIsRemoved: config.outsideIsRemoved,

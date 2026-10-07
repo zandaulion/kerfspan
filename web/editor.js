@@ -148,6 +148,7 @@ const SERVER_SYNC_DELAY_MS = 1200;
 const SHARE_BUNDLE_SCHEMA = PROJECT_BUNDLE_SCHEMA;
 const SHARE_BUNDLE_VERSION = PROJECT_BUNDLE_VERSION;
 const MANUAL_ONLY_STYLES = new Set(['icoana']);
+const DEFAULT_IMPORT_STYLE = 'lamele';
 const PANEL_SIZE_PRESETS = Object.freeze({
   a0: Object.freeze({ widthMm: 841, heightMm: 1189 }),
   a1: Object.freeze({ widthMm: 594, heightMm: 841 }),
@@ -749,7 +750,7 @@ function despeckle(mask, minimumPixels) {
 }
 
 function selectedCutStyle() {
-  return document.querySelector('input[name="cutStyle"]:checked')?.value || 'line-art';
+  return document.querySelector('input[name="cutStyle"]:checked')?.value || DEFAULT_IMPORT_STYLE;
 }
 
 function syncStylePicker() {
@@ -1471,7 +1472,7 @@ function failProcessingPanel(owner, title, detail, retry) {
   showProcessingPanel({ owner, title, detail, stateName: 'failed', retry });
 }
 
-async function runGeometryJob(type, payload, { title, detail, retry, onProgress } = {}) {
+async function runGeometryJob(type, payload, { title, detail, retry, onProgress, transfer = [] } = {}) {
   const owner = `geometry-${++geometryJobSequence}`;
   const startedAt = performance.now();
   showProcessingPanel({
@@ -1494,6 +1495,7 @@ async function runGeometryJob(type, payload, { title, detail, retry, onProgress 
         }
         onProgress?.(progress);
       },
+      transfer,
     });
     recordProcessingMetric(type, performance.now() - startedAt, 'completed', result.durationMs);
     hideProcessingPanel(owner);
@@ -2131,6 +2133,7 @@ async function validateCurrentGeometry({ reviewAnchor = null, focusReview = fals
       title: 'Checking geometry…',
       detail: 'Checking connectivity, openings, and finished metal widths.',
       retry: () => void validateCurrentGeometry({ reviewAnchor, focusReview }),
+      transfer: [validationMask.data.buffer],
     });
   } catch (error) {
     console.error('Could not validate the current geometry:', error);
@@ -6226,10 +6229,10 @@ function resetManualStyleForNewImage() {
   const currentStyle = selectedCutStyle();
   if (!MANUAL_ONLY_STYLES.has(currentStyle)) return false;
   closeToolOptions();
-  const lineArt = document.querySelector('input[name="cutStyle"][value="line-art"]');
-  if (lineArt) lineArt.checked = true;
-  activateStyleSettings('line-art');
-  state.mode = 'line-art';
+  const defaultStyle = document.querySelector(`input[name="cutStyle"][value="${DEFAULT_IMPORT_STYLE}"]`);
+  if (defaultStyle) defaultStyle.checked = true;
+  activateStyleSettings(DEFAULT_IMPORT_STYLE);
+  state.mode = 'photo';
   setTool('pan');
   reflectModeControls();
   return true;
@@ -10243,6 +10246,7 @@ export async function startEditor({ device, offline = false } = {}) {
   syncMobileWorkspaceLayout();
   syncCuttingProfileControls();
   enforcePlasmaLimits();
+  activateStyleSettings(selectedCutStyle());
   setMode(document.querySelector('input[name="cutStyle"]:checked')?.value === 'line-art' ? 'line-art' : 'photo');
   setStage('prepare');
   setView('material');

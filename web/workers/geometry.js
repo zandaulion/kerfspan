@@ -1,4 +1,5 @@
 import { executeGeometryJob } from "../core/geometry-jobs.js";
+import { collectTransferableBuffers } from "../core/async-jobs.js";
 
 function report(id, phase, detail) {
   self.postMessage({ id, kind: "progress", progress: { phase, detail } });
@@ -13,7 +14,7 @@ self.onmessage = (event) => {
       id,
       kind: "result",
       result: { value: result, durationMs: performance.now() - startedAt },
-    });
+    }, collectTransferableBuffers(result));
   } catch (error) {
     self.postMessage({
       id,

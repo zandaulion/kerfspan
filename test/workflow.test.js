@@ -617,6 +617,7 @@ test('long geometry work is cancellable, measured, and protected from stale resu
     assert.match(editor + geometryWorker + geometryJobsCore, new RegExp(`['"]${kind}['"]`), kind);
   }
   assert.match(editor, /geometryJobs\.cancel\('Processing cancelled; the current geometry was kept'\)/);
+  assert.match(editor, /transfer: \[validationMask\.data\.buffer\]/);
   assert.match(editor, /requestedRevision !== state\.revision/);
   assert.match(editor, /repairContractMatchesCurrent\(proposal\.validationContract\)/);
   assert.match(editor, /requestedSignature !== supportPlanSignature\(\)/);
@@ -627,6 +628,8 @@ test('long geometry work is cancellable, measured, and protected from stale resu
   assert.match(html, /Only task names, durations, outcome, device layout, and timestamps are stored/);
   assert.match(geometryWorker, /self\.onmessage/);
   assert.match(geometryWorker, /kind: "result"/);
+  assert.match(geometryWorker, /collectTransferableBuffers\(result\)/);
+  assert.match(geometryJobsCore, /validateDesign\(payload\.mask, payload\.options, report\)/);
 });
 
 test('a new editor opens on an unlinked 1250 by 2500 mm panel', () => {
@@ -736,6 +739,10 @@ test('panel fitting uses visible generated artwork rather than empty source bord
 });
 
 test('photograph styles start from the benchmarked creative defaults', () => {
+  assert.match(html, /name="cutStyle" value="lamele" checked/);
+  assert.doesNotMatch(html, /name="cutStyle" value="line-art" checked/);
+  assert.match(editor, /const DEFAULT_IMPORT_STYLE = 'lamele'/);
+  assert.match(editor, /enforcePlasmaLimits\(\);\s+activateStyleSettings\(selectedCutStyle\(\)\);\s+setMode/);
   const values = {
     'style-threshold': '50',
     'style-outline': '60',
@@ -793,7 +800,7 @@ test('photograph styles start from the benchmarked creative defaults', () => {
   assert.match(html, /id="style-icon-halo"[^>]*type="checkbox" checked/);
   assert.match(html, /Only adds or removes the halo; it does not disable Icon stencil/);
   assert.match(editor, /const MANUAL_ONLY_STYLES = new Set\(\['icoana'\]\)/);
-  assert.match(editor, /function resetManualStyleForNewImage\(\)[\s\S]*?value="line-art"[\s\S]*?state\.mode = 'line-art'/);
+  assert.match(editor, /function resetManualStyleForNewImage\(\)[\s\S]*?DEFAULT_IMPORT_STYLE[\s\S]*?state\.mode = 'photo'/);
   assert.match(editor, /state\.validation = null;\s+resetManualStyleForNewImage\(\);\s+resetHistory\(\)/);
   assert.match(editor, /icoana: Object\.freeze\(\{/);
   assert.match(editor, /form\.set\('prag_icoana'/);

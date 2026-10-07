@@ -80,7 +80,7 @@ export function executeGeometryJob(type, payload, report = () => {}) {
   }
   if (type === "validate") {
     report("checking", "Checking connectivity, openings, and finished metal widths…");
-    return validateDesign(payload.mask, payload.options);
+    return validateDesign(payload.mask, payload.options, report);
   }
   if (type === "repair") {
     report("planning", "Testing local corrections against the complete blocker set…");

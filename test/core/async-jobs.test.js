@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createWorkerJobRunner, isJobCancelled } from '../../web/core/async-jobs.js';
+import {
+  collectTransferableBuffers,
+  createWorkerJobRunner,
+  isJobCancelled,
+} from '../../web/core/async-jobs.js';
 
 class FakeWorker {
   static instances = [];
@@ -56,6 +60,17 @@ test('worker jobs can transfer snapshot buffers without cloning the live source'
   assert.deepEqual(worker.transfer, [bytes.buffer]);
   worker.emit({ id: worker.sent.id, kind: 'result', result: { value: 'encoded' } });
   assert.equal((await pending).value, 'encoded');
+});
+
+test('large worker results transfer each typed-array buffer without copying it', () => {
+  const labels = new Int32Array(12);
+  const mask = new Uint8Array(12);
+  const cyclic = { labels, nested: [{ mask }, labels] };
+  cyclic.self = cyclic;
+  assert.deepEqual(
+    new Set(collectTransferableBuffers(cyclic)),
+    new Set([labels.buffer, mask.buffer]),
+  );
 });
 
 test('a newer job terminates and rejects the superseded job', async () => {

@@ -28,7 +28,7 @@ test('background validation is deterministic and structured-clone safe', () => {
   const first = executeGeometryJob('validate', { mask, options: validationOptions }, (phase) => phases.push(phase));
   const second = executeGeometryJob('validate', { mask, options: validationOptions });
   assert.deepEqual(first, second);
-  assert.deepEqual(phases, ['checking']);
+  assert.deepEqual(phases, ['checking', 'connectivity', 'post-kerf', 'openings', 'webs']);
   assert.doesNotThrow(() => structuredClone(first));
 });
 
