@@ -25,6 +25,9 @@ test('Kerfspan is the public brand while project compatibility remains stable', 
   assert.match(html, /<strong>Kerfspan<\/strong>/);
   assert.match(html, /href="https:\/\/zandaulion\.com\/kerfloom\.html"/);
   assert.match(html, /href="mailto:zandaulion@gmail\.com"/);
+  assert.match(html, /class="gate-preview-image" src="\/images\/landing-slats\.png"/);
+  assert.ok(fs.existsSync(path.join(projectRoot, 'web/images/landing-slats.png')));
+  assert.doesNotMatch(html, /gate-landscape-mask|gate-cutout-mask/);
   assert.match(manifest, /"name": "Kerfspan"/);
   assert.match(html, /rel="icon" href="\/icons\/kerfloom-48\.png"/);
   assert.match(manifest, /"src": "\/icons\/kerfloom-48\.png"/);
