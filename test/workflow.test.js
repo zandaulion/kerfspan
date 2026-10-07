@@ -23,6 +23,8 @@ test('Kerfspan is the public brand while project compatibility remains stable', 
   assert.match(html, /<title>Kerfspan — Art that holds together<\/title>/);
   assert.match(html, /Kerfspan by Zandaulion/);
   assert.match(html, /<strong>Kerfspan<\/strong>/);
+  assert.match(html, /href="https:\/\/zandaulion\.com\/kerfloom\.html"/);
+  assert.match(html, /href="mailto:zandaulion@gmail\.com"/);
   assert.match(manifest, /"name": "Kerfspan"/);
   assert.match(html, /rel="icon" href="\/icons\/kerfloom-48\.png"/);
   assert.match(manifest, /"src": "\/icons\/kerfloom-48\.png"/);
