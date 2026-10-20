@@ -25,6 +25,15 @@ More in [docs/screenshots](docs/screenshots/), including the [style library](doc
 
 For artwork without the editor interface, see the [finished-panel portfolio](docs/portfolio/), covering every Kerfspan cut style plus Material and Back-lit presentation variants.
 
+
+[Quick start](#quick-start) · [User handbook](docs/KERFSPAN_USER_GUIDE.md)
+· [Deployment](deploy/README.md) · [Portfolio](docs/portfolio/README.md)
+
+**Project identity:** Kerfspan was previously called Kerfloom. Some internal names,
+storage volumes and compatibility URLs intentionally retain the old name. Use
+Kerfspan for new public descriptions; do not rename persistent storage or existing
+routes merely to match the brand.
+
 ## Quick start
 
 You need Docker with Compose, or Podman with `podman compose`, and about 3 GB
@@ -348,3 +357,12 @@ the systemd units and volume of the production deployment.
 ## License
 
 The application is licensed under GPL-3.0-or-later; the license text is in [LICENSE](LICENSE). Third-party notices are recorded in [NOTICE.md](NOTICE.md).
+
+
+## Support and contributions
+
+Use this repository’s Issues for reproducible bugs and focused feature requests. Include the version, relevant runtime/browser, expected behavior and a minimal synthetic example. Remove credentials, personal records, device identifiers and deployment-specific values before sharing logs or screenshots.
+
+Use the [Testing](#testing) and [deployment](deploy/README.md) guides. Validate exported geometry with synthetic artwork and the intended cutting profile; screenshots must not contain personal source images or project records.
+
+Keep changes focused and update the affected documentation. Security-sensitive reports should follow [SECURITY.md](SECURITY.md).
