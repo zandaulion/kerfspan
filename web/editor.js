@@ -1691,6 +1691,8 @@ async function renderStyle() {
     if (mine === styleToken) {
       state.styleBusy = false;
       styleAbort = null;
+      // The redraw above ran while still busy; refresh its "updating" copy.
+      updateToneInspector();
       if (processingPanelOwner === 'style' && el('render-progress')?.dataset.state !== 'failed') {
         setRenderProgress();
       }
@@ -3247,7 +3249,8 @@ function draw() {
 function clearVectorDotPreview(layer) {
   if (!layer) return;
   layer.replaceChildren();
-  layer.hidden = true;
+  // An SVG element has no `hidden` property; only the attribute hides it.
+  layer.setAttribute('hidden', '');
 }
 
 function drawVectorDotPreview(layer, mask, { visible = true, afterKerf = false, geometry = mask } = {}) {
@@ -3289,7 +3292,7 @@ function drawVectorDotPreview(layer, mask, { visible = true, afterKerf = false, 
   layer.setAttribute('width', String(mask.width));
   layer.setAttribute('height', String(mask.height));
   layer.replaceChildren(patch, holes);
-  layer.hidden = false;
+  layer.removeAttribute('hidden');
 }
 
 function drawOverlay(overlay, mask) {

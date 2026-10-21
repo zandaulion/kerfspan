@@ -885,3 +885,10 @@ test('a page opened without a secure context explains why and cannot redeem', ()
   assert.match(html, /id="gate-insecure"[^>]*hidden/);
   assert.match(app, /if \(!window\.isSecureContext\) \{[\s\S]*?gate-insecure[\s\S]*?submit\.disabled = true/);
 });
+
+test('the exact Variable Dots layer is shown by its hidden attribute', () => {
+  // SVG elements have no `hidden` property: assigning it left the markup's
+  // attribute in place, so the exact circles were never displayed.
+  assert.doesNotMatch(editor, /layer\.hidden\s*=/);
+  assert.match(editor, /function drawVectorDotPreview[\s\S]*?layer\.removeAttribute\('hidden'\)/);
+});
