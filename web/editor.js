@@ -2117,6 +2117,8 @@ function currentValidationOptions() {
     anchorBoundary: false,
     requireAnchored: false,
     requireSingleComponent: true,
+    // Validation keeps only those still cut exactly in the mask it checks.
+    exactCircleHoles: availableVectorDotHoles(),
   };
 }
 
@@ -2497,6 +2499,7 @@ async function buildRepairPreview({ focus = true, mode = 'errors' } = {}) {
         minimumWebMm,
         minimumOpeningMm,
         geometryInterpretation: contract.geometryInterpretation,
+        exactCircleHoles: availableVectorDotHoles(),
         targetWebMm,
         targetOpeningMm,
         protectedMask: repairProtectedMask(mask),

@@ -16,10 +16,15 @@ import {
   createMask,
   pixelSizeMm,
 } from "./mask.js";
+import { intactCircleHoles } from "./vector-dots.js";
+
+// Exact circles are judged analytically; this only absorbs float rounding in
+// generated radii, never a physical shortfall.
+const EXACT_TOLERANCE_MM = 1e-3;
 
 // Bump only when the meaning of the geometry checks changes. Repair previews
 // and release records use this value to prove which validator judged them.
-export const GEOMETRY_VALIDATION_MODEL_VERSION = 1;
+export const GEOMETRY_VALIDATION_MODEL_VERSION = 2;
 
 /**
  * Runs topology and approximate physical-width checks. In the current
@@ -43,6 +48,7 @@ export const GEOMETRY_VALIDATION_MODEL_VERSION = 1;
  *   requireSingleComponent?: boolean,
  *   outsideIsRemoved?: boolean,
  *   geometryInterpretation?: 'finished-boundary-cam-v1'|'legacy-uncompensated-centerline-v1',
+ *   exactCircleHoles?: Array<{cxMm:number,cyMm:number,radiusMm:number}>,
  * }} config
  * @param {(phase:string, detail:string) => void} [report]
  */
@@ -65,6 +71,11 @@ export function validateDesign(mask, config, report = () => {}) {
     anchorMask: config.anchorMask ?? null,
     anchorBoundary: config.anchorBoundary,
   };
+  // Variable Dots holes still cut exactly as generated are measured as true
+  // circles. Their raster copy is a stair-stepped approximation that can lose
+  // a pixel per edge, which turned limit-sized dots and gaps into hundreds of
+  // false errors. Anything edited, bridged, or repaired stays raster-checked.
+  const exactCircles = intactCircleHoles(config.exactCircleHoles ?? [], mask, config.sheet);
   const issues = [];
   report("connectivity", "Checking retained-material connectivity…");
   const initial = analyzeConnectivity(mask, connectivityOptions);
@@ -163,6 +174,17 @@ export function validateDesign(mask, config, report = () => {}) {
       connectivity: 8,
     });
   }
+  const exactCircleByComponent = new Map();
+  if (removed) {
+    for (const circle of exactCircles) {
+      const x = Math.floor(circle.cxMm / config.sheet.widthMm * mask.width);
+      const y = Math.floor(circle.cyMm / config.sheet.heightMm * mask.height);
+      const componentId = removed.labels[y * mask.width + x];
+      if (componentId > 0 && !exactCircleByComponent.has(componentId)) {
+        exactCircleByComponent.set(componentId, circle);
+      }
+    }
+  }
   if (effectiveOpeningMm > 0) {
     openingCoreMask = erodeMaskPhysical(removedMask, effectiveOpeningMm / 2, config.sheet, {
       outsideIsRemoved: false,
@@ -174,7 +196,11 @@ export function validateDesign(mask, config, report = () => {}) {
       }
     }
     for (const component of removed.components) {
-      if (!surviving.has(component.id)) undersizedOpenings.push(component);
+      const circle = exactCircleByComponent.get(component.id);
+      const undersized = circle
+        ? circle.radiusMm * 2 + EXACT_TOLERANCE_MM < effectiveOpeningMm
+        : !surviving.has(component.id);
+      if (undersized) undersizedOpenings.push(component);
     }
     if (undersizedOpenings.length > 0) {
       const locations = undersizedOpenings.map((component) => ({
@@ -211,6 +237,7 @@ export function validateDesign(mask, config, report = () => {}) {
       config.sheet,
       requiredDrawnWebMm,
       kerfLossMm,
+      exactCircleByComponent,
     );
     if (gaps.length > 0) {
       const closest = gaps[0];
@@ -242,14 +269,21 @@ export function validateDesign(mask, config, report = () => {}) {
   if (minimumWebMm > 0 && postKerf.retainedPixels > 0) {
     report("webs", "Checking finished metal widths…");
     const webRadius = minimumWebMm / 2;
-    minimumWebCoreMask = erodeMaskPhysical(postKerfMask, webRadius, config.sheet, {
+    // Metal between two exact circles was already measured exactly by the cut
+    // gap check, so their holes are filled before the raster width morphology.
+    // Circles close to the sheet edge stay open: that sliver is checked here.
+    const webMask = fillExactCircles(postKerfMask, exactCircleByComponent.values(), config.sheet, {
+      expansionMm: kerfLossMm / 2,
+      edgeClearanceMm: minimumWebMm,
+    });
+    minimumWebCoreMask = erodeMaskPhysical(webMask, webRadius, config.sheet, {
       outsideIsRemoved: config.outsideIsRemoved,
     });
     minimumWebCore = analyzeConnectivity(minimumWebCoreMask, connectivityOptions);
     const reopened = dilateMaskPhysical(minimumWebCoreMask, webRadius, config.sheet);
 
-    for (let index = 0; index < postKerfMask.data.length; index += 1) {
-      if (postKerfMask.data[index] === RETAINED && reopened.data[index] !== RETAINED) {
+    for (let index = 0; index < webMask.data.length; index += 1) {
+      if (webMask.data[index] === RETAINED && reopened.data[index] !== RETAINED) {
         thinAreaMask.data[index] = RETAINED;
         thinPixelCount += 1;
       }
@@ -393,7 +427,14 @@ function issue(code, severity, message, details = {}) {
  * pixel-level duplicates. Boundary pixels are spatially bucketed, keeping the
  * search bounded by local cutter-scale neighbourhoods.
  */
-function findCutGapViolations(removedMask, labels, sheet, minimumGapMm, finishedGapOffsetMm = 0) {
+function findCutGapViolations(
+  removedMask,
+  labels,
+  sheet,
+  minimumGapMm,
+  finishedGapOffsetMm = 0,
+  exactCircleByComponent = new Map(),
+) {
   const pixel = pixelSizeMm(removedMask, sheet);
   const cellSize = minimumGapMm + Math.max(pixel.x, pixel.y);
   const buckets = new Map();
@@ -413,6 +454,8 @@ function findCutGapViolations(removedMask, labels, sheet, minimumGapMm, finished
           const nearby = buckets.get(`${bucketX + offsetX},${bucketY + offsetY}`) ?? [];
           for (const other of nearby) {
             if (other.componentId === componentId) continue;
+            if (exactCircleByComponent.has(componentId) &&
+                exactCircleByComponent.has(other.componentId)) continue;
             // Pixel centres include half a raster cell from each cut. Remove
             // those cell extents to report the physical metal gap, not the
             // centre-to-centre distance.
@@ -449,10 +492,80 @@ function findCutGapViolations(removedMask, labels, sheet, minimumGapMm, finished
       buckets.get(key).push(point);
     }
   }
+  addExactCircleGapViolations(
+    closestByPair, exactCircleByComponent, pixel, minimumGapMm, finishedGapOffsetMm,
+  );
   return [...closestByPair.values()].sort((first, second) =>
     first.gapMm - second.gapMm ||
     first.componentIds[0] - second.componentIds[0] ||
     first.componentIds[1] - second.componentIds[1]);
+}
+
+function addExactCircleGapViolations(closestByPair, exactCircleByComponent, pixel, minimumGapMm, finishedGapOffsetMm) {
+  if (exactCircleByComponent.size < 2) return;
+  const entries = [...exactCircleByComponent.entries()];
+  const largestRadius = Math.max(...entries.map(([, circle]) => circle.radiusMm));
+  const cellSize = largestRadius * 2 + minimumGapMm;
+  const buckets = new Map();
+  for (const entry of entries) {
+    const [, circle] = entry;
+    const key = `${Math.floor(circle.cxMm / cellSize)},${Math.floor(circle.cyMm / cellSize)}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(entry);
+  }
+  for (const [componentId, circle] of entries) {
+    const bucketX = Math.floor(circle.cxMm / cellSize);
+    const bucketY = Math.floor(circle.cyMm / cellSize);
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        for (const [otherId, other] of buckets.get(`${bucketX + offsetX},${bucketY + offsetY}`) ?? []) {
+          if (otherId <= componentId) continue;
+          const distance = Math.hypot(other.cxMm - circle.cxMm, other.cyMm - circle.cyMm);
+          const gapMm = Math.max(0, distance - circle.radiusMm - other.radiusMm);
+          if (gapMm + EXACT_TOLERANCE_MM >= minimumGapMm) continue;
+          const unitX = distance > 0 ? (other.cxMm - circle.cxMm) / distance : 0;
+          const unitY = distance > 0 ? (other.cyMm - circle.cyMm) / distance : 0;
+          const points = [
+            [circle.cxMm + unitX * circle.radiusMm, circle.cyMm + unitY * circle.radiusMm],
+            [other.cxMm - unitX * other.radiusMm, other.cyMm - unitY * other.radiusMm],
+          ].map(([xMm, yMm]) => ({ x: Math.floor(xMm / pixel.x), y: Math.floor(yMm / pixel.y) }));
+          const minX = Math.min(points[0].x, points[1].x);
+          const minY = Math.min(points[0].y, points[1].y);
+          const maxX = Math.max(points[0].x, points[1].x);
+          const maxY = Math.max(points[0].y, points[1].y);
+          closestByPair.set(`${componentId},${otherId}`, {
+            gapMm,
+            finishedGapMm: Math.max(0, gapMm - finishedGapOffsetMm),
+            componentIds: [componentId, otherId],
+            points,
+            bounds: { minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 },
+          });
+        }
+      }
+    }
+  }
+}
+
+function fillExactCircles(mask, circles, sheet, { expansionMm = 0, edgeClearanceMm = 0 } = {}) {
+  const filled = { width: mask.width, height: mask.height, data: mask.data.slice() };
+  const scaleX = mask.width / sheet.widthMm;
+  const scaleY = mask.height / sheet.heightMm;
+  for (const circle of circles) {
+    const reach = circle.radiusMm + expansionMm + edgeClearanceMm;
+    if (circle.cxMm - reach < 0 || circle.cyMm - reach < 0 ||
+        circle.cxMm + reach > sheet.widthMm || circle.cyMm + reach > sheet.heightMm) continue;
+    // One extra pixel covers the stair-stepped raster edge of the hole.
+    const rx = (circle.radiusMm + expansionMm) * scaleX + 1;
+    const ry = (circle.radiusMm + expansionMm) * scaleY + 1;
+    const cx = circle.cxMm * scaleX;
+    const cy = circle.cyMm * scaleY;
+    for (let y = Math.max(0, Math.floor(cy - ry)); y <= Math.min(mask.height - 1, Math.ceil(cy + ry)); y += 1) {
+      for (let x = Math.max(0, Math.floor(cx - rx)); x <= Math.min(mask.width - 1, Math.ceil(cx + rx)); x += 1) {
+        if (Math.hypot((x + 0.5 - cx) / rx, (y + 0.5 - cy) / ry) <= 1) filled.data[y * mask.width + x] = RETAINED;
+      }
+    }
+  }
+  return filled;
 }
 
 function isRemovedBoundary(mask, x, y) {

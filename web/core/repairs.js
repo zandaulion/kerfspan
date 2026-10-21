@@ -576,6 +576,7 @@ export function planManufacturingRepairs(mask, options) {
     anchorBoundary: false,
     requireAnchored: false,
     requireSingleComponent: true,
+    exactCircleHoles: options.exactCircleHoles,
   });
   const beforeValidation = validate(mask);
   const validationContract = {
