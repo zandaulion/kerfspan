@@ -137,4 +137,4 @@ export {
   maskFingerprint,
   retireConflictingRepairEdit,
 } from "./candidates.js";
-export { normalizeVectorDots, placeVectorDots, separateCircleContours } from "./vector-dots.js";
+export { intactCircleHoles, normalizeVectorDots, placeVectorDots, separateCircleContours } from "./vector-dots.js";

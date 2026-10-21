@@ -1,4 +1,5 @@
 import { pointFromArtworkPlacement } from './placement.js';
+import { REMOVED, RETAINED } from './mask.js';
 
 /**
  * Normalizes the compact Variable Dots descriptor returned by the analysis
@@ -136,4 +137,43 @@ export function separateCircleContours(contours, mask, sheet, circles = []) {
     contours: contours.filter((_, index) => !used.has(index)),
     matchedCircles,
   };
+}
+
+/**
+ * Keeps only the circles that are still untouched holes in the mask: open
+ * inside, retained metal in a thin ring around them. Edits, supports, and
+ * repairs then affect only the dots they actually touch, which stay raster,
+ * instead of forcing every other dot back to its pixel approximation.
+ */
+export function intactCircleHoles(circles, mask, sheet) {
+  if (!Array.isArray(circles) || circles.length === 0 || !mask) return [];
+  const scaleX = mask.width / sheet.widthMm;
+  const scaleY = mask.height / sheet.heightMm;
+  return circles.filter((circle) => {
+    if (!circle || ![circle.cxMm, circle.cyMm, circle.radiusMm].every(Number.isFinite) || circle.radiusMm <= 0) return false;
+    const cx = circle.cxMm * scaleX;
+    const cy = circle.cyMm * scaleY;
+    const rx = circle.radiusMm * scaleX;
+    const ry = circle.radiusMm * scaleY;
+    const left = Math.floor(cx - rx - 2);
+    const right = Math.ceil(cx + rx + 2);
+    const top = Math.floor(cy - ry - 2);
+    const bottom = Math.ceil(cy + ry + 2);
+    if (left < 0 || top < 0 || right >= mask.width || bottom >= mask.height) return false;
+    const centre = Math.floor(cy) * mask.width + Math.floor(cx);
+    if (mask.data[centre] !== REMOVED) return false;
+    for (let y = top; y <= bottom; y += 1) {
+      for (let x = left; x <= right; x += 1) {
+        // Distance from the circle edge in pixels along the ray to (x, y).
+        const dx = (x + 0.5 - cx) / rx;
+        const dy = (y + 0.5 - cy) / ry;
+        const normalized = Math.hypot(dx, dy);
+        const edge = (normalized - 1) * Math.min(rx, ry);
+        const value = mask.data[y * mask.width + x];
+        if (edge <= -1 && value !== REMOVED) return false;
+        if (edge >= 1 && edge <= 2 && value !== RETAINED) return false;
+      }
+    }
+    return true;
+  });
 }

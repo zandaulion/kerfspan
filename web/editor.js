@@ -56,6 +56,7 @@ import {
   physicalStrokeIndices,
   normalizeCuttingProfile,
   normalizeVectorDots,
+  intactCircleHoles,
   nextIssueReviewTarget,
   placeVectorDots,
   placeMaskOnSheet,
@@ -892,15 +893,8 @@ function availableVectorDotHoles() {
   return state.placedVectorDots;
 }
 
-function exactVectorDotHoles() {
-  const circles = availableVectorDotHoles();
-  const repairEditsActive = state.manufacturingRepairs.enabled !== false &&
-    state.manufacturingRepairs.stale !== true &&
-    (state.manufacturingRepairs.keep.size > 0 || state.manufacturingRepairs.remove.size > 0);
-  const activeManualEdits = state.manualEdits.some((edit) => edit.enabled !== false);
-  if (!circles.length || state.painted.keep.size || state.painted.remove.size || activeManualEdits ||
-      repairEditsActive || state.bridges.some((bridge) => bridge.enabled !== false)) return [];
-  return circles;
+function exactVectorDotHoles(mask) {
+  return intactCircleHoles(availableVectorDotHoles(), mask, sheet());
 }
 
 function remapPaintedSet(indices, fromKey, toWidth, toHeight) {
@@ -3234,6 +3228,7 @@ function draw() {
 
   drawVectorDotPreview(vectorLayer, mask, {
     visible: !repairPreviewVisible && ['source', 'material', 'backlit'].includes(state.view),
+    geometry: source,
     afterKerf: Boolean(kerf),
   });
 
@@ -3247,8 +3242,8 @@ function clearVectorDotPreview(layer) {
   layer.hidden = true;
 }
 
-function drawVectorDotPreview(layer, mask, { visible = true, afterKerf = false } = {}) {
-  const circles = visible ? exactVectorDotHoles() : [];
+function drawVectorDotPreview(layer, mask, { visible = true, afterKerf = false, geometry = mask } = {}) {
+  const circles = visible ? exactVectorDotHoles(geometry) : [];
   if (!layer || !circles.length) {
     clearVectorDotPreview(layer);
     return;
@@ -3266,9 +3261,11 @@ function drawVectorDotPreview(layer, mask, { visible = true, afterKerf = false }
     const cy = circle.cyMm * scaleY;
     const rx = (circle.radiusMm + kerfExpansionMm) * scaleX;
     const ry = (circle.radiusMm + kerfExpansionMm) * scaleY;
-    const patchRx = rx + 1.25;
-    const patchRy = ry + 1.25;
-    patchPath += `M${(cx - patchRx).toFixed(3)} ${(cy - patchRy).toFixed(3)}h${(patchRx * 2).toFixed(3)}v${(patchRy * 2).toFixed(3)}h-${(patchRx * 2).toFixed(3)}Z`;
+    // Round, not square: the intact check only proves a 2-pixel ring of
+    // metal, and square corners could hide a neighbouring raster dot.
+    const patchRx = rx + 1.75;
+    const patchRy = ry + 1.75;
+    patchPath += `M${(cx + patchRx).toFixed(3)} ${cy.toFixed(3)}A${patchRx.toFixed(3)} ${patchRy.toFixed(3)} 0 1 0 ${(cx - patchRx).toFixed(3)} ${cy.toFixed(3)}A${patchRx.toFixed(3)} ${patchRy.toFixed(3)} 0 1 0 ${(cx + patchRx).toFixed(3)} ${cy.toFixed(3)}Z`;
     circlePath += `M${(cx + rx).toFixed(3)} ${cy.toFixed(3)}A${rx.toFixed(3)} ${ry.toFixed(3)} 0 1 0 ${(cx - rx).toFixed(3)} ${cy.toFixed(3)}A${rx.toFixed(3)} ${ry.toFixed(3)} 0 1 0 ${(cx + rx).toFixed(3)} ${cy.toFixed(3)}Z`;
   }
   const namespace = 'http://www.w3.org/2000/svg';
@@ -7528,7 +7525,9 @@ function pngBlob(mask, { draft = false, exactCircleHoles = [] } = {}) {
       const cy = circle.cyMm * scaleY;
       const rx = circle.radiusMm * scaleX;
       const ry = circle.radiusMm * scaleY;
-      context.fillRect(cx - rx - scale, cy - ry - scale, rx * 2 + scale * 2, ry * 2 + scale * 2);
+      context.beginPath();
+      context.ellipse(cx, cy, rx + scale * 1.75, ry + scale * 1.75, 0, 0, Math.PI * 2);
+      context.fill();
     }
     context.fillStyle = '#f5f4f0';
     for (const circle of exactCircleHoles) {
@@ -7642,7 +7641,7 @@ async function exportGeometry(kind) {
   // visibly watermarked and cannot be mistaken for released cut geometry.
   const mask = geometryForExport();
   const vectorCircleHoles = availableVectorDotHoles();
-  const previewCircleHoles = exactVectorDotHoles();
+  const previewCircleHoles = exactVectorDotHoles(mask);
   try {
     const units = el('export-units')?.value === 'in' ? 'in' : 'mm';
     const requestedRevision = state.revision;
