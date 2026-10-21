@@ -74,6 +74,13 @@ test("a versioned project round-trips without typed-array leakage", () => {
       followsFeatures: true,
       rank: 1,
       fallback: true,
+      stabilizer: true,
+      stationMm: 95,
+      nominalStationMm: 100,
+      organicOffsetMm: -5,
+      organicSkewMm: 3,
+      organicVariation: 0.75,
+      targetSpanMm: 250,
     }],
   });
   project = projectWithSourceMask(project, sourceMask);
@@ -92,6 +99,14 @@ test("a versioned project round-trips without typed-array leakage", () => {
   assert.equal(restored.bridges[0].featureAlignmentPenalty, 0.05);
   assert.equal(restored.bridges[0].portraitPenalty, 0.4);
   assert.equal(restored.bridges[0].followsFeatures, true);
+  assert.equal(restored.bridges[0].stabilizer, true);
+  assert.equal(restored.bridges[0].role, "stabilizer");
+  assert.equal(restored.bridges[0].stationMm, 95);
+  assert.equal(restored.bridges[0].nominalStationMm, 100);
+  assert.equal(restored.bridges[0].organicOffsetMm, -5);
+  assert.equal(restored.bridges[0].organicSkewMm, 3);
+  assert.equal(restored.bridges[0].organicVariation, 0.75);
+  assert.equal(restored.bridges[0].targetSpanMm, 250);
 });
 
 test("projects retain an exact cutting-profile snapshot instead of a preset name", () => {

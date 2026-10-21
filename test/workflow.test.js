@@ -17,6 +17,7 @@ const geometryWorker = fs.readFileSync(path.join(projectRoot, 'web/workers/geome
 const geometryJobsCore = fs.readFileSync(path.join(projectRoot, 'web/core/geometry-jobs.js'), 'utf8');
 const featureGuidance = fs.readFileSync(path.join(projectRoot, 'web/core/feature-guidance.js'), 'utf8');
 const releaseManifest = fs.readFileSync(path.join(projectRoot, 'web/core/release-manifest.js'), 'utf8');
+const projectCore = fs.readFileSync(path.join(projectRoot, 'web/core/project.js'), 'utf8');
 const userGuide = fs.readFileSync(path.join(projectRoot, 'docs/KERFSPAN_USER_GUIDE.md'), 'utf8');
 
 test('Kerfspan is the public brand while project compatibility remains stable', () => {
@@ -313,7 +314,7 @@ test('PNG previews remain available before validation and are visibly marked as 
   assert.match(html, /id="btn-export-png"[^>]*disabled/);
   assert.match(html, /Draft previews include a validation watermark/);
   assert.match(html, /File names include the project, panel size, cut style, frame choice, purpose, and validation or preview timestamp/);
-  assert.match(editor, /for \(const id of \['btn-export-svg', 'btn-export-dxf'\]\)/);
+  assert.match(editor, /for \(const \[id, format\] of \[\['btn-export-svg', 'SVG'\], \['btn-export-dxf', 'DXF'\]\]\)/);
   assert.match(editor, /pngButton\?\.toggleAttribute\('disabled', !hasGeometry\)/);
   assert.match(editor, /const mask = geometryForExport\(\)/);
   assert.match(editor, /const draft = kind === 'png' && !validated/);
@@ -594,6 +595,14 @@ test('slats add a configurable staggered structural stabilization pass', () => {
   assert.match(editor, /strategy\.maximumUnsupportedSpanMm = toMm\(numberField\('max-cantilever', 250\)\)/);
   assert.match(editor, /strategy\.organicVariation = numberField\('stabilizer-organic', 75\) \/ 100/);
   assert.match(editor, /bridge\.stabilizer/);
+  assert.match(editor, /function slatStabilizationExportBlocker\(\)/);
+  assert.match(editor, /Review and accept the current smart-support proposal/);
+  assert.match(editor, /setStage\('support'\);[\s\S]*?toast\(slatBlocker\)/);
+  assert.match(editor, /gate\.dataset\.tooltip = tooltip/);
+  assert.match(html, /data-export-gate="svg"/);
+  assert.match(html, /data-export-gate="dxf"/);
+  assert.match(css, /\.export-button-gate\[data-tooltip\]::after/);
+  assert.match(projectCore, /bridge\.stabilizer === true/);
   assert.match(html, /Controls slat span/);
 });
 

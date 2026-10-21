@@ -409,6 +409,13 @@ function normalizeProjectBridge(bridge, index) {
     ...(Number.isInteger(bridge.rank) && bridge.rank > 0 ? { rank: bridge.rank } : {}),
     ...(bridge.redundant === true ? { redundant: true } : {}),
     ...(bridge.fallback === true ? { fallback: true } : {}),
+    ...(bridge.stabilizer === true ? { stabilizer: true, role: "stabilizer" } : {}),
+    ...(Number.isFinite(bridge.stationMm) ? { stationMm: bridge.stationMm } : {}),
+    ...(Number.isFinite(bridge.nominalStationMm) ? { nominalStationMm: bridge.nominalStationMm } : {}),
+    ...(Number.isFinite(bridge.organicOffsetMm) ? { organicOffsetMm: bridge.organicOffsetMm } : {}),
+    ...(Number.isFinite(bridge.organicSkewMm) ? { organicSkewMm: bridge.organicSkewMm } : {}),
+    ...(Number.isFinite(bridge.organicVariation) ? { organicVariation: bridge.organicVariation } : {}),
+    ...(Number.isFinite(bridge.targetSpanMm) ? { targetSpanMm: bridge.targetSpanMm } : {}),
   };
 }
 

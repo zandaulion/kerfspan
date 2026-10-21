@@ -278,6 +278,7 @@ const state = {
   supportTapStart: null,
   supportProposal: null,
   automaticSupportsStale: false,
+  slatStabilizersReviewedRevision: null,
   selectedBridge: null,
   hoveredBridge: null,
   candidates: [],
@@ -3870,33 +3871,87 @@ function applyPanelSizePreset(value) {
 function updateExportReadiness() {
   const card = el('export-readiness');
   const hasGeometry = Boolean(state.designMask);
-  const ready = currentGeometryIsValidated();
-  const advisoryLocations = ready ? countValidationLocations(state.validation, 'warning') : 0;
+  const geometryValidated = currentGeometryIsValidated();
+  const slatBlocker = slatStabilizationExportBlocker();
+  const ready = geometryValidated && !slatBlocker;
+  const advisoryLocations = geometryValidated ? countValidationLocations(state.validation, 'warning') : 0;
   if (card) {
     card.dataset.state = ready ? 'ready' : hasGeometry ? 'draft' : 'blocked';
     const profileCopy = state.cuttingProfile.status === 'verified'
       ? `Verified profile revision ${state.cuttingProfile.revision} carries recorded shop evidence.`
       : `Profile revision ${state.cuttingProfile.revision} is provisional; confirm it before cutting.`;
-    card.querySelector('span').innerHTML = ready
-      ? `<strong>Ready for CAM review</strong><small>No blocking geometry issues found${advisoryLocations ? `; review ${advisoryLocations} advisory ${advisoryLocations === 1 ? 'location' : 'locations'}` : ' or advisories'}. ${profileCopy} PNG has no watermark.</small>`
+    card.querySelector('span').innerHTML = slatBlocker
+      ? `<strong>Slat supports required</strong><small>${escapeHtml(slatBlocker)}</small>`
+      : ready
+        ? `<strong>Ready for CAM review</strong><small>No blocking geometry issues found${advisoryLocations ? `; review ${advisoryLocations} advisory ${advisoryLocations === 1 ? 'location' : 'locations'}` : ' or advisories'}. ${profileCopy} PNG has no watermark.</small>`
       : hasGeometry
         ? '<strong>Draft preview available</strong><small>PNG includes a validation watermark. Run all checks to enable SVG and DXF.</small>'
         : '<strong>Artwork required</strong><small>Import or create artwork before exporting a preview.</small>';
   }
-  for (const id of ['btn-export-svg', 'btn-export-dxf']) {
-    el(id)?.toggleAttribute('disabled', !ready);
+  const missingCondition = vectorExportMissingCondition(slatBlocker);
+  for (const [id, format] of [['btn-export-svg', 'SVG'], ['btn-export-dxf', 'DXF']]) {
+    const button = el(id);
+    button?.toggleAttribute('disabled', !ready);
+    const gate = button?.closest('[data-export-gate]');
+    if (!gate) continue;
+    if (ready) {
+      gate.removeAttribute('data-tooltip');
+      gate.removeAttribute('aria-label');
+      gate.removeAttribute('tabindex');
+    } else {
+      const tooltip = `${format} export unavailable. ${missingCondition}`;
+      gate.dataset.tooltip = tooltip;
+      gate.setAttribute('aria-label', tooltip);
+      gate.tabIndex = 0;
+    }
   }
   const pngButton = el('btn-export-png');
   pngButton?.toggleAttribute('disabled', !hasGeometry);
   const pngDescription = pngButton?.querySelector('small');
   if (pngDescription) {
-    pngDescription.textContent = ready
+    pngDescription.textContent = geometryValidated
       ? 'Validated full-resolution preview · no watermark'
       : hasGeometry
         ? 'Draft preview · validation watermark included'
         : 'Available after artwork is created';
   }
   all('[data-next-stage="export"]').forEach((button) => button.toggleAttribute('disabled', !hasGeometry));
+}
+
+function enabledSlatStabilizerCount() {
+  return state.bridges.filter((bridge) => (
+    bridge.enabled !== false &&
+    bridge.source === 'automatic' &&
+    bridge.stabilizer === true
+  )).length;
+}
+
+function slatStabilizationExportBlocker() {
+  if (!state.designMask || selectedCutStyle() !== 'lamele' || el('stabilize-slats')?.checked === false) {
+    return null;
+  }
+  const proposed = state.supportProposal?.bridges.filter((bridge) => bridge.stabilizer === true).length ?? 0;
+  if (proposed > 0) {
+    return `Review and accept the current smart-support proposal; ${proposed} slat ${proposed === 1 ? 'stabilizer is' : 'stabilizers are'} waiting. Then run all checks again.`;
+  }
+  if (state.automaticSupportsStale) {
+    return 'The applied smart supports are stale. Recalculate them in Support, review and accept the new proposal, then run all checks again.';
+  }
+  if (enabledSlatStabilizerCount() > 0 || state.slatStabilizersReviewedRevision === state.revision) {
+    return null;
+  }
+  return 'In Support, choose Suggest smart bridges, review the slat stabilizers, and accept the proposal. Then run all checks. Turn off “Stabilize long slats” only if you intentionally do not want them.';
+}
+
+function vectorExportMissingCondition(slatBlocker = slatStabilizationExportBlocker()) {
+  if (!state.designMask) return 'Import or create artwork first.';
+  if (slatBlocker) return slatBlocker;
+  if (state.validationPending) return 'Wait for the geometry checks to finish.';
+  if (state.validation && state.validatedRevision === state.revision && !state.validation.valid) {
+    const count = countValidationLocations(state.validation, 'error');
+    return `Fix ${count || 'the'} blocking geometry ${count === 1 ? 'location' : 'locations'}, then run all checks again.`;
+  }
+  return 'Run all checks on the current geometry.';
 }
 
 /* ---------------------------------------------------------------- history */
@@ -4053,6 +4108,7 @@ function restore(serialised) {
   syncCuttingProfileControls(data.cuttingProfile ?? createCuttingProfile());
   state.bridges = cloneBridges(data.bridges);
   state.supportProposal = null;
+  state.slatStabilizersReviewedRevision = null;
   state.supportTapStart = null;
   state.bridgePreview = null;
   state.painted = { keep: new Set(data.painted.keep), remove: new Set(data.painted.remove) };
@@ -6145,6 +6201,7 @@ async function loadProjectState(project, { imported = false } = {}) {
   // projects also carry baseMask and can be re-placed when panel dimensions change.
   state.bridges = cloneBridges(project.bridges ?? []);
   state.supportProposal = null;
+  state.slatStabilizersReviewedRevision = null;
   state.supportTapStart = null;
   state.bridgePreview = null;
   state.automaticSupportsStale = project.editor?.automaticSupportsStale === true;
@@ -6272,6 +6329,7 @@ async function importFile(file) {
     resetManufacturingRepairs();
     state.bridges = [];
     state.supportProposal = null;
+    state.slatStabilizersReviewedRevision = null;
     state.supportTapStart = null;
     state.bridgePreview = null;
     state.automaticSupportsStale = false;
@@ -6579,6 +6637,7 @@ function restoreCandidate(id) {
   }
   state.bridges = cloneBridges(candidate.bridges ?? []);
   state.supportProposal = null;
+  state.slatStabilizersReviewedRevision = null;
   state.supportTapStart = null;
   state.bridgePreview = null;
   state.selectedBridge = null;
@@ -6911,8 +6970,11 @@ function renderSupportProposal() {
   el('btn-accept-support-proposal')?.toggleAttribute('disabled', proposal.bridges.length === 0);
 }
 
-function clearSupportProposal({ redraw = true } = {}) {
+function clearSupportProposal({ redraw = true, preserveSlatReview = false } = {}) {
   if (!state.supportProposal) return false;
+  if (!preserveSlatReview && state.supportProposal.bridges.some((bridge) => bridge.stabilizer === true)) {
+    state.slatStabilizersReviewedRevision = null;
+  }
   state.supportProposal = null;
   updateAutomaticSupportState();
   if (redraw) draw();
@@ -6920,8 +6982,12 @@ function clearSupportProposal({ redraw = true } = {}) {
 }
 
 function markAutomaticSupportsStale() {
+  state.slatStabilizersReviewedRevision = null;
   clearSupportProposal({ redraw: false });
-  if (!automaticSupportCount() || state.automaticSupportsStale) return;
+  if (!automaticSupportCount() || state.automaticSupportsStale) {
+    updateExportReadiness();
+    return;
+  }
   state.automaticSupportsStale = true;
   updateAutomaticSupportState();
 }
@@ -6942,6 +7008,7 @@ function updateAutomaticSupportState() {
   if (counter) counter.textContent = count ? String(count) : '';
   renderSupportList();
   renderSupportProposal();
+  updateExportReadiness();
 }
 
 function sourcePointOnSheet(normalizedX, normalizedY) {
@@ -7133,8 +7200,12 @@ async function autoBridge() {
       : finishedConnected
         ? 'Everything is already one connected finished piece.'
         : 'No automatic support plan passed the connectivity check; reduce detail or add a manual support.';
+    if (selectedCutStyle() === 'lamele' && el('stabilize-slats')?.checked !== false) {
+      state.slatStabilizersReviewedRevision = state.revision;
+    }
     if (!suggested.length) {
-      clearSupportProposal();
+      clearSupportProposal({ preserveSlatReview: true });
+      updateExportReadiness();
       toast(`${resultMessage}${fallbackNotice}`);
       return;
     }
@@ -7189,6 +7260,8 @@ async function acceptSupportProposal() {
   state.automaticSupportsStale = false;
   selectBridge(null);
   refresh({ immediate: true, rebuildSourceMask: false });
+  state.slatStabilizersReviewedRevision = state.revision;
+  updateExportReadiness();
   pushHistory();
   toast(`Applied ${count} smart ${count === 1 ? 'support' : 'supports'} as one undoable action.${finishedConnected ? ' The finished geometry is connected.' : ' Validate to review the remaining separation.'}`);
   await createRecoveryPoint('Smart supports accepted');
@@ -7628,6 +7701,12 @@ async function prepareGeometryForVectorExport(mask, vectorCircleHoles, requested
 async function exportGeometry(kind) {
   if (!state.designMask) {
     toast('Import or create artwork before exporting.');
+    return;
+  }
+  const slatBlocker = slatStabilizationExportBlocker();
+  if (kind !== 'png' && slatBlocker) {
+    setStage('support');
+    toast(slatBlocker);
     return;
   }
   const validated = currentGeometryIsValidated();
@@ -8630,7 +8709,8 @@ function wire() {
     state.selectedManualEditId = null;
     resetManufacturingRepairs();
     state.paintedFor = null; state.bridges = []; state.automaticSupportsStale = false;
-    state.supportProposal = null; state.supportTapStart = null; state.bridgePreview = null;
+    state.supportProposal = null; state.slatStabilizersReviewedRevision = null;
+    state.supportTapStart = null; state.bridgePreview = null;
     state.candidates = []; state.selectedCandidateId = null; state.validation = null;
     renderManualEditManager();
     state.lastValidatedAt = null; state.lastExportedAt = null;

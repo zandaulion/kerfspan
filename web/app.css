@@ -3366,6 +3366,50 @@ select:focus {
   gap: 8px;
 }
 
+.export-button-gate {
+  position: relative;
+}
+
+.export-button-gate > .button {
+  width: 100%;
+}
+
+.export-button-gate[data-tooltip]::after {
+  position: absolute;
+  z-index: 30;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: min(310px, calc(100vw - 40px));
+  padding: 9px 11px;
+  border: 1px solid #b9cbc7;
+  border-radius: 8px;
+  background: #102c2d;
+  box-shadow: 0 8px 24px rgb(17 40 40 / 18%);
+  color: #fff;
+  content: attr(data-tooltip);
+  font-size: 0.68rem;
+  font-weight: 560;
+  line-height: 1.42;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  transform: translateY(3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.export-button-gate[data-tooltip]:hover::after,
+.export-button-gate[data-tooltip]:focus::after,
+.export-button-gate[data-tooltip]:focus-within::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.export-button-gate[data-tooltip]:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
+}
+
 .export-buttons .button {
   display: grid;
   min-height: 61px;

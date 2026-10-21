@@ -996,7 +996,7 @@
                 <input class="switch" id="support-follow-style" name="supportFollowStyle" type="checkbox" checked>
               </label>
               <label class="toggle-row" for="stabilize-slats">
-                <span>Stabilize long slats<small>Add staggered cross-ties between neighbouring bars</small></span>
+                <span>Stabilize long slats<small>Include staggered cross-ties in the smart-support proposal; accept it before export</small></span>
                 <input class="switch" id="stabilize-slats" name="stabilizeSlats" type="checkbox" checked>
               </label>
               <label class="field-row" for="max-cantilever">
@@ -1186,16 +1186,20 @@
             <p class="section-help">File names include the project, panel size, cut style, frame choice, purpose, and validation or preview timestamp.</p>
 
             <div class="export-buttons">
-              <button class="button button-primary button-full" id="btn-export-svg" type="button" disabled>
-                <span class="file-badge">SVG</span>
-                <span><strong>Export SVG</strong><small>For CAM and vector editors</small></span>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"></path></svg>
-              </button>
-              <button class="button button-secondary button-full" id="btn-export-dxf" type="button" disabled>
-                <span class="file-badge">DXF</span>
-                <span><strong>Export DXF</strong><small>Closed contours, drawing units</small></span>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"></path></svg>
-              </button>
+              <div class="export-button-gate" data-export-gate="svg">
+                <button class="button button-primary button-full" id="btn-export-svg" type="button" disabled>
+                  <span class="file-badge">SVG</span>
+                  <span><strong>Export SVG</strong><small>For CAM and vector editors</small></span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"></path></svg>
+                </button>
+              </div>
+              <div class="export-button-gate" data-export-gate="dxf">
+                <button class="button button-secondary button-full" id="btn-export-dxf" type="button" disabled>
+                  <span class="file-badge">DXF</span>
+                  <span><strong>Export DXF</strong><small>Closed contours, drawing units</small></span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"></path></svg>
+                </button>
+              </div>
               <button class="button button-secondary button-full" id="btn-export-png" type="button" disabled>
                 <span class="file-badge">PNG</span>
                 <span><strong>Export PNG</strong><small>Draft previews include a validation watermark</small></span>
