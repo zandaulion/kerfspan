@@ -1,0 +1,12 @@
+site.env
+.env
+.env.*
+node_modules/
+.venv/
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.key
+*.pem
+*.log

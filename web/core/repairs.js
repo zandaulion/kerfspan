@@ -1,0 +1,1264 @@
+import { physicalDiscIndices, physicalStrokeIndices } from "./editing.js";
+import { applyCapsuleBridges } from "./bridges.js";
+import { dilateMaskPhysical } from "./morphology.js";
+import { suggestBridges, suggestKerfAwareBridges } from "./suggestions.js";
+import {
+  GEOMETRY_VALIDATION_MODEL_VERSION,
+  countValidationLocations,
+  validateDesign,
+} from "./validation.js";
+import {
+  FINISHED_BOUNDARY_CAM,
+  normalizeGeometryInterpretation,
+  rasterWebWidthMm,
+  requiredOpeningMm,
+} from "./geometry-contract.js";
+import {
+  REMOVED,
+  RETAINED,
+  assertMask,
+  assertSameSize,
+  assertSheet,
+  cloneMask,
+  pixelSizeMm,
+} from "./mask.js";
+
+const STRATEGIES = new Set(["preserve", "balanced", "durable"]);
+const ACTIONS = new Set(["close", "enlarge", "merge"]);
+
+/**
+ * Measures what a proposed repair changes in physical terms. These are raster
+ * measurements, deliberately accompanied by the cell diagonal so the UI does
+ * not imply sub-cell manufacturing accuracy.
+ */
+export function measureRepairEffects(before, after, {
+  sheet,
+  beforeValidation = null,
+  afterValidation = null,
+} = {}) {
+  assertMask(before);
+  assertMask(after);
+  assertSameSize(before, after);
+  assertSheet(sheet);
+  const pixel = pixelSizeMm(before, sheet);
+  const cellAreaMm2 = pixel.x * pixel.y;
+  let addedCells = 0;
+  let removedCells = 0;
+  for (let index = 0; index < before.data.length; index += 1) {
+    if (before.data[index] === after.data[index]) continue;
+    if (after.data[index] === RETAINED) addedCells += 1;
+    else removedCells += 1;
+  }
+  const changedCells = addedCells + removedCells;
+  const coreArea = (validation) =>
+    (validation?.minimumWebCore?.retainedPixels ?? 0) * cellAreaMm2;
+  return {
+    addedCells,
+    removedCells,
+    changedCells,
+    addedAreaMm2: addedCells * cellAreaMm2,
+    removedAreaMm2: removedCells * cellAreaMm2,
+    changedAreaMm2: changedCells * cellAreaMm2,
+    changedPanelPercent: before.data.length > 0 ? changedCells / before.data.length * 100 : 0,
+    beforeFinishedComponents: beforeValidation?.postKerf?.componentCount ?? null,
+    afterFinishedComponents: afterValidation?.postKerf?.componentCount ?? null,
+    beforeFullWidthCoreComponents: beforeValidation?.minimumWebCore?.componentCount ?? 0,
+    afterFullWidthCoreComponents: afterValidation?.minimumWebCore?.componentCount ?? 0,
+    beforeFullWidthCoreAreaMm2: coreArea(beforeValidation),
+    afterFullWidthCoreAreaMm2: coreArea(afterValidation),
+    pixelWidthMm: pixel.x,
+    pixelHeightMm: pixel.y,
+    rasterUncertaintyMm: Math.hypot(pixel.x, pixel.y),
+  };
+}
+
+/** Returns an explicit stop reason and useful next actions for a repair pass. */
+export function describeRepairTermination(outcome, validation, diagnostics = {}) {
+  const errors = new Set((validation?.errors ?? []).map((issue) => issue.code));
+  const warnings = new Set((validation?.warnings ?? []).map((issue) => issue.code));
+  const warningCount = countValidationLocations(validation, "warning");
+  let code = "no-safe-change";
+  let message = "No selected automatic change safely improved the complete geometry check.";
+  if (outcome?.afterErrors === 0 && warningCount === 0) {
+    code = "checks-clear";
+    message = "Stopped because every configured geometry check is clear.";
+  } else if (outcome?.afterErrors === 0) {
+    code = "blockers-clear";
+    message = "Stopped because every blocker is resolved; remaining findings are optional advisories.";
+  } else if (diagnostics.supportBudgetHit) {
+    code = "support-budget-reached";
+    message = `Stopped at the ${diagnostics.supportTieLimit}-tie safety limit with blockers still visible.`;
+  } else if (outcome?.safeToApply) {
+    code = "safe-subset-complete";
+    message = "Stopped after keeping every safe improvement found; unresolved blockers need a design or manual change.";
+  } else if ((diagnostics.rejectedCandidateCount ?? 0) > 0) {
+    code = "unsafe-candidates-rejected";
+    message = "Stopped because the remaining proposals failed the complete-design safety check.";
+  }
+
+  const nextActions = [];
+  if (errors.has("MIN_CUT_GAP")) {
+    nextActions.push("Increase pattern spacing or use Add material at the highlighted narrow web.");
+  }
+  if (errors.has("MIN_OPENING_UNCUTTABLE")) {
+    nextActions.push("Enlarge or Restore the highlighted opening, or increase the source pattern scale.");
+  }
+  if (errors.has("DISCONNECTED_RETAINED_MATERIAL") || errors.has("KERF_DISCONNECTED_RETAINED_MATERIAL")) {
+    nextActions.push("Add a manual support at the highlighted detached finished piece.");
+  }
+  if (outcome?.afterErrors === 0 && [...warnings].some((code) =>
+    ["MIN_WEB_NO_SURVIVING_CORE", "MIN_WEB_DISCONNECT", "MIN_WEB_THIN_AREAS"].includes(code))) {
+    nextActions.push("Review the optional warning pass; it may visibly thicken the artwork.");
+  }
+  if (warnings.has("FEATURE_BELOW_RASTER_RESOLUTION")) {
+    nextActions.push("Increase the pattern scale or render resolution before trusting sub-cell features.");
+  }
+  if (outcome?.afterErrors > 0) {
+    nextActions.push("Change a manufacturing limit only when machine documentation or a shop test supports it.");
+  }
+  return { code, message, nextActions: [...new Set(nextActions)] };
+}
+
+/**
+ * Builds reversible repair choices for every opening rejected by validation.
+ * The plan contains edits for all three choices, so the UI can switch an
+ * individual opening without rerunning connectivity analysis.
+ *
+ * `protectedMask` identifies frame/support pixels that must not be carved by
+ * an enlargement or merge. Closing an opening may still add material there.
+ *
+ * @param {import('./mask.js').RasterMask} mask
+ * @param {ReturnType<import('./validation.js').validateDesign>} validation
+ * @param {{
+ *   sheet: {widthMm:number,heightMm:number},
+ *   strategy?: "preserve"|"balanced"|"durable",
+ *   targetOpeningMm: number,
+ *   minimumWebMm?: number,
+ *   protectedMask?: import('./mask.js').RasterMask|null,
+ * }} options
+ */
+export function planSmallOpeningRepairs(mask, validation, options) {
+  assertMask(mask);
+  if (!validation || typeof validation !== "object") throw new TypeError("Validation result is required");
+  assertSheet(options?.sheet);
+  const strategy = options.strategy ?? "balanced";
+  if (!STRATEGIES.has(strategy)) throw new RangeError("Unknown repair strategy");
+  const targetOpeningMm = positive(options.targetOpeningMm, "targetOpeningMm");
+  const minimumWebMm = nonNegative(options.minimumWebMm ?? 0, "minimumWebMm");
+  const protectedMask = options.protectedMask ?? null;
+  if (protectedMask) assertSameSize(mask, protectedMask);
+
+  const labels = validation.removed?.labels;
+  const components = validation.undersizedOpenings ?? [];
+  if (!(labels instanceof Int32Array) || components.length === 0) {
+    return emptyPlan(strategy, targetOpeningMm, minimumWebMm);
+  }
+
+  const pixel = pixelSizeMm(mask, options.sheet);
+  // The validator treats neighbouring pixel cells conservatively. Add one
+  // raster diagonal so a nominally safe opening still contains a surviving
+  // core instead of landing exactly on a quantisation boundary.
+  const rasterSafeOpeningMm = targetOpeningMm + Math.hypot(pixel.x, pixel.y);
+  const items = components.map((component, position) => {
+    const indices = indicesForComponent(mask, labels, component);
+    const centre = centroid(mask, indices, component.bounds);
+    const areaMm2 = indices.length * pixel.x * pixel.y;
+    const equivalentDiameterMm = 2 * Math.sqrt(areaMm2 / Math.PI);
+    const shortSpanMm = Math.min(component.bounds.width * pixel.x, component.bounds.height * pixel.y);
+    const longSpanMm = Math.max(component.bounds.width * pixel.x, component.bounds.height * pixel.y);
+    const elongated = longSpanMm / Math.max(shortSpanMm, Math.min(pixel.x, pixel.y)) >= 2.4;
+    const maximumClosureDiameterMm = targetOpeningMm * 1.75;
+    const maximumClosureSpanMm = Math.max(targetOpeningMm * 2, minimumWebMm * 1.5);
+    const closureProtected = longSpanMm > maximumClosureSpanMm ||
+      equivalentDiameterMm > maximumClosureDiameterMm;
+    const meaningful = isMeaningful({
+      strategy,
+      equivalentDiameterMm,
+      longSpanMm,
+      targetOpeningMm,
+      elongated,
+    });
+
+    const enlarge = physicalDiscIndices(mask, centre, rasterSafeOpeningMm, options.sheet)
+      .filter((index) => protectedMask?.data[index] !== RETAINED);
+    const neighbour = nearestOtherOpening(mask, labels, component.id, indices, options.sheet, minimumWebMm);
+    const merge = neighbour
+      ? unique([
+          ...enlarge,
+          ...physicalStrokeIndices(mask, neighbour.from, neighbour.to, rasterSafeOpeningMm, options.sheet),
+        ]).filter((index) => protectedMask?.data[index] !== RETAINED)
+      : null;
+    const canEnlarge = enlarge.some((index) => mask.data[index] === RETAINED);
+    const canMerge = Boolean(merge?.some((index) => mask.data[index] === RETAINED));
+    const availableActions = {
+      close: !closureProtected,
+      enlarge: canEnlarge,
+      merge: canMerge,
+    };
+    const recommended = meaningful && canMerge
+      ? "merge"
+      : meaningful && canEnlarge
+        ? "enlarge"
+        : availableActions.close
+          ? "close"
+          : canEnlarge
+            ? "enlarge"
+            : canMerge
+              ? "merge"
+              : "close";
+
+    return {
+      id: `opening-${component.id}`,
+      position,
+      componentId: component.id,
+      pixelCount: component.pixelCount,
+      bounds: component.bounds,
+      centre,
+      equivalentDiameterMm,
+      shortSpanMm,
+      longSpanMm,
+      closureProtected,
+      similarityKey: `${elongated ? "elongated" : "compact"}-${sizeBand(equivalentDiameterMm / targetOpeningMm)}`,
+      action: recommended,
+      recommended,
+      availableActions,
+      edits: {
+        close: closureProtected ? null : { keep: indices, remove: [] },
+        enlarge: { keep: [], remove: enlarge },
+        merge: canMerge ? { keep: [], remove: merge } : null,
+      },
+      mergeGapMm: neighbour?.gapMm ?? null,
+    };
+  });
+
+  const plan = {
+    kind: "small-openings",
+    strategy,
+    targetOpeningMm,
+    minimumWebMm,
+    items,
+    protectedClosureCount: items.filter((item) => item.closureProtected).length,
+    counts: countActions(items),
+  };
+  return plan;
+}
+
+/**
+ * Builds reversible repairs for every pair of cut regions that is closer than
+ * the machine's minimum web. Each strategy expresses a different trade-off:
+ * preserve joins the two cuts, balanced adds a local metal pad to widen their
+ * separation, and durable closes the smaller cut region entirely.
+ *
+ * The validator supplies one closest-point location per cut-component pair,
+ * preventing a long parallel near-miss from producing hundreds of edits.
+ *
+ * @param {import('./mask.js').RasterMask} mask
+ * @param {ReturnType<import('./validation.js').validateDesign>} validation
+ * @param {{
+ *   sheet:{widthMm:number,heightMm:number},
+ *   strategy?:"preserve"|"balanced"|"durable",
+ *   targetGapMm:number,
+ *   targetOpeningMm:number,
+ *   widenMode?:"local"|"component-shell",
+ *   protectedMask?:import('./mask.js').RasterMask|null,
+ * }} options
+ */
+export function planCutGapRepairs(mask, validation, options) {
+  assertMask(mask);
+  if (!validation || typeof validation !== "object") throw new TypeError("Validation result is required");
+  assertSheet(options?.sheet);
+  const strategy = options.strategy ?? "balanced";
+  if (!STRATEGIES.has(strategy)) throw new RangeError("Unknown repair strategy");
+  const targetGapMm = positive(options.targetGapMm, "targetGapMm");
+  const targetOpeningMm = positive(options.targetOpeningMm, "targetOpeningMm");
+  const widenMode = options.widenMode ?? "local";
+  if (!["local", "component-shell"].includes(widenMode)) throw new RangeError("Unknown cut-gap widening mode");
+  const protectedMask = options.protectedMask ?? null;
+  if (protectedMask) assertSameSize(mask, protectedMask);
+
+  const issue = validation.issues?.find((entry) => entry.code === "MIN_CUT_GAP");
+  const locations = issue?.details?.locations ?? [];
+  const labels = validation.removed?.labels;
+  const components = validation.removed?.components ?? [];
+  if (!(labels instanceof Int32Array) || locations.length === 0) {
+    return {
+      kind: "cut-gaps",
+      strategy,
+      targetGapMm,
+      targetOpeningMm,
+      items: [],
+      protectedClosureCount: 0,
+      counts: { close: 0, enlarge: 0, merge: 0 },
+    };
+  }
+
+  const pixel = pixelSizeMm(mask, options.sheet);
+  const rasterAllowanceMm = Math.hypot(pixel.x, pixel.y);
+  // Slat gaps are long parallel near-misses. A round pad at the single
+  // closest sample cannot change the distance along the rest of the pair.
+  // Grow retained material uniformly into the involved cut components by
+  // half of the largest modest deficit instead. The per-component filter
+  // below keeps unrelated artwork unchanged.
+  const shellDeficitLimitMm = targetGapMm * 0.4;
+  const maximumShellDeficitMm = widenMode === "component-shell"
+    ? Math.max(0, ...locations.map((location) => targetGapMm - location.gapMm)
+      .filter((deficit) => deficit > 0 && deficit <= shellDeficitLimitMm))
+    : 0;
+  const componentShellMask = maximumShellDeficitMm > 0
+    ? dilateMaskPhysical(mask, maximumShellDeficitMm / 2, options.sheet)
+    : null;
+  const componentsById = new Map(components.map((component) => [component.id, component]));
+  const componentIndices = new Map();
+  const indicesForId = (id) => {
+    if (!componentIndices.has(id)) {
+      const component = componentsById.get(id);
+      componentIndices.set(id, component ? indicesForComponent(mask, labels, component) : []);
+    }
+    return componentIndices.get(id);
+  };
+
+  const items = locations.map((location, position) => {
+    const [firstId, secondId] = location.componentIds;
+    const first = componentsById.get(firstId);
+    const second = componentsById.get(secondId);
+    const smaller = !second || (first && first.pixelCount <= second.pixelCount) ? first : second;
+    const close = smaller ? indicesForId(smaller.id) : [];
+    const deficitMm = Math.max(0, targetGapMm - location.gapMm);
+    const padDiameterMm = Math.max(
+      Math.min(pixel.x, pixel.y),
+      deficitMm + rasterAllowanceMm,
+    );
+    const localWiden = unique(location.points.flatMap((point) =>
+      physicalDiscIndices(mask, point, padDiameterMm, options.sheet)));
+    const merge = physicalStrokeIndices(
+      mask,
+      location.points[0],
+      location.points[1],
+      Math.max(targetOpeningMm, rasterAllowanceMm),
+      options.sheet,
+    );
+    const mergeProtected = merge.some((index) =>
+      protectedMask?.data[index] === RETAINED && mask.data[index] === RETAINED);
+    const smallerWidthMm = (smaller?.bounds.width ?? 0) * pixel.x;
+    const smallerHeightMm = (smaller?.bounds.height ?? 0) * pixel.y;
+    const smallerLongSpanMm = Math.max(smallerWidthMm, smallerHeightMm);
+    const smallerAreaMm2 = (smaller?.pixelCount ?? 0) * pixel.x * pixel.y;
+    const smallerDiameterMm = 2 * Math.sqrt(smallerAreaMm2 / Math.PI);
+    // Closing means filling the complete cut component with metal. It is safe
+    // only for a genuinely minor mark. A long slat, hatch stroke, letterform,
+    // or portrait opening may be the smaller member of a conflicting pair but
+    // is never disposable merely because doing so makes validation pass.
+    const maximumClosureDiameterMm = targetOpeningMm * 1.75;
+    const maximumClosureSpanMm = Math.max(targetOpeningMm * 2, targetGapMm * 1.5);
+    const closureProtected = smallerLongSpanMm > maximumClosureSpanMm ||
+      smallerDiameterMm > maximumClosureDiameterMm;
+    const useComponentShell = Boolean(
+      componentShellMask &&
+      closureProtected &&
+      deficitMm <= shellDeficitLimitMm,
+    );
+    const involvedComponents = new Set([firstId, secondId]);
+    const componentShell = useComponentShell
+      ? unique([...indicesForId(firstId), ...indicesForId(secondId)])
+        .filter((index) =>
+          involvedComponents.has(labels[index]) &&
+          componentShellMask.data[index] === RETAINED &&
+          mask.data[index] === REMOVED)
+      : [];
+    const widen = componentShell.length > 0 ? componentShell : localWiden;
+    const canClose = !closureProtected && close.some((index) => mask.data[index] === REMOVED);
+    const canWiden = widen.some((index) => mask.data[index] === REMOVED);
+    const canMerge = !mergeProtected && merge.some((index) => mask.data[index] === RETAINED);
+    const preferred = { preserve: "merge", balanced: "enlarge", durable: "close" }[strategy];
+    const availableActions = { close: canClose, enlarge: canWiden, merge: canMerge };
+    const recommended = availableActions[preferred]
+      ? preferred
+      : ["enlarge", "merge", "close"].find((action) => availableActions[action]) ?? "close";
+
+    return {
+      id: `cut-gap-${firstId}-${secondId}`,
+      position,
+      componentIds: [firstId, secondId],
+      bounds: location.bounds,
+      points: location.points,
+      gapMm: location.gapMm,
+      finishedGapMm: location.finishedGapMm ?? location.gapMm,
+      deficitMm,
+      smallerComponentId: smaller?.id ?? null,
+      smallerDiameterMm,
+      smallerLongSpanMm,
+      closureProtected,
+      widenMode: componentShell.length > 0 ? "component-shell" : "local",
+      similarityKey: `gap-${sizeBand(location.gapMm / targetGapMm)}-${sizeBand(smallerDiameterMm / targetOpeningMm)}`,
+      action: recommended,
+      recommended,
+      availableActions,
+      edits: {
+        close: canClose ? { keep: close, remove: [] } : null,
+        enlarge: canWiden ? { keep: widen, remove: [] } : null,
+        merge: canMerge ? { keep: [], remove: merge } : null,
+      },
+    };
+  });
+
+  return {
+    kind: "cut-gaps",
+    strategy,
+    targetGapMm,
+    targetOpeningMm,
+    items,
+    protectedClosureCount: items.filter((item) => item.closureProtected).length,
+    counts: countActions(items),
+  };
+}
+
+/**
+ * Plans conservative cleanup of tiny retained islands. A one-cell island is
+ * always eligible because it is raster noise, while broader cleanup depends
+ * on the chosen strategy. Larger detached artwork is deliberately left for a
+ * support bridge instead of being erased without consent.
+ *
+ * @param {import('./mask.js').RasterMask} mask
+ * @param {ReturnType<import('./validation.js').validateDesign>} validation
+ * @param {{
+ *   sheet:{widthMm:number,heightMm:number},
+ *   strategy?:"preserve"|"balanced"|"durable",
+ *   minimumWebMm:number,
+ *   protectedMask?:import('./mask.js').RasterMask|null,
+ * }} options
+ */
+export function planLoosePieceRepairs(mask, validation, options) {
+  assertMask(mask);
+  if (!validation || typeof validation !== "object") throw new TypeError("Validation result is required");
+  assertSheet(options?.sheet);
+  const strategy = options.strategy ?? "balanced";
+  if (!STRATEGIES.has(strategy)) throw new RangeError("Unknown repair strategy");
+  const minimumWebMm = positive(options.minimumWebMm, "minimumWebMm");
+  const protectedMask = options.protectedMask ?? null;
+  if (protectedMask) assertSameSize(mask, protectedMask);
+
+  const issue = validation.issues?.find((entry) => entry.code === "DISCONNECTED_RETAINED_MATERIAL");
+  const locations = issue?.details?.locations ?? [];
+  const labels = validation.initial?.labels;
+  const components = validation.initial?.components ?? [];
+  if (!(labels instanceof Int32Array) || locations.length === 0) {
+    return {
+      kind: "loose-pieces",
+      strategy,
+      minimumWebMm,
+      totalCount: 0,
+      skippedCount: 0,
+      items: [],
+      counts: { close: 0, enlarge: 0, merge: 0 },
+    };
+  }
+
+  const pixel = pixelSizeMm(mask, options.sheet);
+  const componentsById = new Map(components.map((component) => [component.id, component]));
+  const eligible = locations.filter((location) => {
+    const component = componentsById.get(location.componentId);
+    if (!component) return false;
+    const widthMm = component.bounds.width * pixel.x;
+    const heightMm = component.bounds.height * pixel.y;
+    const areaMm2 = component.pixelCount * pixel.x * pixel.y;
+    const equivalentDiameterMm = 2 * Math.sqrt(areaMm2 / Math.PI);
+    if (component.pixelCount === 1) return true;
+    if (strategy === "preserve") return false;
+    if (strategy === "balanced") {
+      return widthMm <= minimumWebMm && heightMm <= minimumWebMm &&
+        equivalentDiameterMm <= minimumWebMm * 1.25;
+    }
+    return widthMm <= minimumWebMm * 2 && heightMm <= minimumWebMm * 2 &&
+      equivalentDiameterMm <= minimumWebMm * 2;
+  });
+
+  const items = eligible.map((location, position) => {
+    const component = componentsById.get(location.componentId);
+    const indices = indicesForComponent(mask, labels, component)
+      .filter((index) => protectedMask?.data[index] !== RETAINED);
+    return {
+      id: `loose-piece-${component.id}`,
+      position,
+      componentId: component.id,
+      pixelCount: component.pixelCount,
+      bounds: component.bounds,
+      similarityKey: component.pixelCount === 1 ? "one-cell" : `loose-${sizeBand(component.pixelCount)}`,
+      action: "close",
+      recommended: "close",
+      availableActions: { close: indices.length > 0, enlarge: false, merge: false },
+      edits: { close: { keep: [], remove: indices }, enlarge: null, merge: null },
+    };
+  }).filter((item) => item.availableActions.close);
+
+  return {
+    kind: "loose-pieces",
+    strategy,
+    minimumWebMm,
+    totalCount: locations.length,
+    skippedCount: locations.length - items.length,
+    items,
+    counts: countActions(items),
+  };
+}
+
+const CONNECTIVITY_ERROR_CODES = new Set([
+  "DISCONNECTED_RETAINED_MATERIAL",
+  "KERF_DISCONNECTED_RETAINED_MATERIAL",
+]);
+
+/**
+ * Plans manufacturing repairs as a sequence of independently checked stages.
+ *
+ * The old workflow applied every available morphology and support suggestion
+ * in one pass. A bridge could therefore split a cut into new undersized
+ * openings, while strict minimum-web morphology could generate thousands of
+ * ties for raster fragments. This planner instead repairs true export blockers
+ * first, validates after each stage, and rolls back any stage that does not
+ * improve the complete blocking-error result. Warning-only reinforcement is
+ * attempted only after the blockers are gone and is bounded by the same bridge
+ * budget.
+ *
+ * @param {import('./mask.js').RasterMask} mask
+ * @param {{
+ *   sheet:{widthMm:number,heightMm:number},
+ *   kerfMm:number,
+ *   minimumWebMm:number,
+ *   minimumOpeningMm:number,
+ *   targetWebMm:number,
+ *   targetOpeningMm:number,
+ *   strategy?:"preserve"|"balanced"|"durable",
+ *   categories?:{slivers?:boolean,gaps?:boolean,webs?:boolean,warnings?:boolean},
+ *   protectedMask?:import('./mask.js').RasterMask|null,
+ *   bridgeWidthMm:number,
+ *   bridgeStrategy?:object,
+ *   maximumBridges?:number,
+ *   profileRef?:{id?:string,name?:string,revision?:number,status?:string,version?:number}|null,
+ *   geometryInterpretation?:'finished-boundary-cam-v1'|'legacy-uncompensated-centerline-v1',
+ * }} options
+ */
+export function planManufacturingRepairs(mask, options) {
+  assertMask(mask);
+  assertSheet(options?.sheet);
+  const strategy = options.strategy ?? "balanced";
+  if (!STRATEGIES.has(strategy)) throw new RangeError("Unknown repair strategy");
+  const kerfMm = nonNegative(options.kerfMm, "kerfMm");
+  const minimumWebMm = nonNegative(options.minimumWebMm, "minimumWebMm");
+  const minimumOpeningMm = nonNegative(options.minimumOpeningMm, "minimumOpeningMm");
+  const targetWebMm = positive(options.targetWebMm, "targetWebMm");
+  const targetOpeningMm = positive(options.targetOpeningMm, "targetOpeningMm");
+  const geometryInterpretation = normalizeGeometryInterpretation(
+    options.geometryInterpretation ?? FINISHED_BOUNDARY_CAM,
+  );
+  const targetRasterWebMm = rasterWebWidthMm(targetWebMm, kerfMm, geometryInterpretation);
+  const targetRasterOpeningMm = requiredOpeningMm(targetOpeningMm, kerfMm);
+  const bridgeWidthMm = positive(options.bridgeWidthMm, "bridgeWidthMm");
+  const maximumBridges = options.maximumBridges ?? 192;
+  if (!Number.isInteger(maximumBridges) || maximumBridges < 1 || maximumBridges > 10_000) {
+    throw new RangeError("maximumBridges must be an integer between 1 and 10000");
+  }
+  const categories = {
+    slivers: options.categories?.slivers !== false,
+    gaps: options.categories?.gaps !== false,
+    webs: options.categories?.webs !== false,
+    warnings: options.categories?.warnings === true,
+  };
+  let protectedMask = options.protectedMask
+    ? cloneMask(options.protectedMask)
+    : { width: mask.width, height: mask.height, data: new Uint8Array(mask.data.length) };
+  assertSameSize(mask, protectedMask);
+
+  const validate = (candidate) => validateDesign(candidate, {
+    sheet: options.sheet,
+    kerfMm,
+    minimumWebMm,
+    minimumOpeningMm,
+    geometryInterpretation,
+    anchorBoundary: false,
+    requireAnchored: false,
+    requireSingleComponent: true,
+  });
+  const beforeValidation = validate(mask);
+  const validationContract = {
+    modelVersion: GEOMETRY_VALIDATION_MODEL_VERSION,
+    geometryInterpretation,
+    sheet: { widthMm: options.sheet.widthMm, heightMm: options.sheet.heightMm },
+    kerfMm,
+    minimumWebMm,
+    minimumOpeningMm,
+    targetWebMm,
+    targetOpeningMm,
+    profile: options.profileRef ? {
+      id: options.profileRef.id ?? null,
+      name: options.profileRef.name ?? null,
+      revision: options.profileRef.revision ?? null,
+      status: options.profileRef.status ?? null,
+      version: options.profileRef.version ?? null,
+    } : null,
+  };
+  let candidate = cloneMask(mask);
+  let validation = beforeValidation;
+  const items = [];
+  const notes = [];
+  const durableFallbackCategories = new Set();
+  const protectedGapClosureIds = new Set();
+  const protectedOpeningClosureIds = new Set();
+  const openingRepairRejectionReasons = new Set();
+  let supportCount = 0;
+  let cleanupRound = 0;
+  let proposedCandidateCount = 0;
+  let rejectedCandidateCount = 0;
+  let supportPassesRun = 0;
+  let supportBudgetHit = false;
+  const rejectionCounts = new Map();
+  const recordRejection = (reason, count = 1) => {
+    if (count <= 0) return;
+    rejectedCandidateCount += count;
+    rejectionCounts.set(reason, (rejectionCounts.get(reason) ?? 0) + count);
+  };
+
+  const applyRawPlan = (plan, category, issueCode, pass) => {
+    const stageItems = repairPlanItems(plan, category, issueCode, pass);
+    if (!stageItems.length) return [];
+    proposedCandidateCount += stageItems.length;
+    candidate = applySmallOpeningRepairPlan(candidate, { items: stageItems });
+    validation = validate(candidate);
+    return stageItems;
+  };
+  const tryIndividuallyCheckedPlan = (plan, category, issueCode, pass) => {
+    const stageItems = repairPlanItems(plan, category, issueCode, pass);
+    proposedCandidateCount += stageItems.length;
+    const accepted = [];
+    for (const item of stageItems) {
+      const proposed = applySmallOpeningRepairPlan(candidate, { items: [item] });
+      const proposedValidation = validate(proposed);
+      const rejection = blockingRepairRejectionReason(validation, proposedValidation, issueCode);
+      if (rejection) {
+        openingRepairRejectionReasons.add(rejection);
+        recordRejection(rejection);
+        continue;
+      }
+      candidate = proposed;
+      validation = proposedValidation;
+      accepted.push(item);
+    }
+    return accepted;
+  };
+  const tryCleanupPlan = (plan, category, issueCode, pass, { individuallyChecked = false } = {}) => {
+    if (individuallyChecked) {
+      const accepted = tryIndividuallyCheckedPlan(plan, category, issueCode, pass);
+      items.push(...accepted);
+      return accepted.length > 0;
+    }
+    const previousMask = candidate;
+    const previousValidation = validation;
+    const previousErrors = countValidationLocations(previousValidation, "error");
+    const stageItems = applyRawPlan(plan, category, issueCode, pass);
+    if (!stageItems.length) return false;
+    if (countValidationLocations(validation, "error") < previousErrors) {
+      items.push(...stageItems);
+      return true;
+    }
+    candidate = previousMask;
+    validation = previousValidation;
+    recordRejection("the batch did not reduce the complete blocking-error count", stageItems.length);
+    return false;
+  };
+  const tryCleanupPlanner = (planner, category, issueCode, pass, checkOptions) => {
+    if (tryCleanupPlan(planner(strategy), category, issueCode, pass, checkOptions)) return true;
+    // Preserve-detail is a contract, not merely a preference. Only Balanced
+    // may escalate a rejected local choice to the metal-preserving Durable
+    // action, and the UI reports that fallback explicitly.
+    if (strategy !== "balanced") return false;
+    const accepted = tryCleanupPlan(planner("durable"), category, issueCode, pass, checkOptions);
+    if (accepted) durableFallbackCategories.add(category);
+    return accepted;
+  };
+  const runCheckedCleanup = () => {
+    const beforeErrors = countValidationLocations(validation, "error");
+    cleanupRound += 1;
+    const stagePass = cleanupRound * 10;
+    if (categories.slivers) {
+      tryCleanupPlanner((attemptStrategy) => planLoosePieceRepairs(candidate, validation, {
+        sheet: options.sheet, strategy: attemptStrategy, minimumWebMm: targetWebMm, protectedMask,
+      }), "sliver", "DISCONNECTED_RETAINED_MATERIAL", stagePass + 1);
+      tryCleanupPlanner((attemptStrategy) => {
+        const openingPlan = planSmallOpeningRepairs(candidate, validation, {
+          sheet: options.sheet, strategy: attemptStrategy,
+          targetOpeningMm: targetRasterOpeningMm, minimumWebMm: targetRasterWebMm, protectedMask,
+        });
+        for (const item of openingPlan.items) {
+          if (item.closureProtected) protectedOpeningClosureIds.add(item.id);
+        }
+        return openingPlan;
+      }, "opening", "MIN_OPENING_UNCUTTABLE", stagePass + 2, { individuallyChecked: true });
+    }
+    if (categories.gaps) {
+      for (let pass = 1; pass <= 3; pass += 1) {
+        const accepted = tryCleanupPlanner((attemptStrategy) => {
+          const gapPlan = planCutGapRepairs(candidate, validation, {
+            sheet: options.sheet, strategy: attemptStrategy,
+            targetGapMm: targetRasterWebMm, targetOpeningMm: targetRasterOpeningMm, protectedMask,
+            widenMode: options.bridgeStrategy?.kind === "lamele" ? "component-shell" : "local",
+          });
+          for (const item of gapPlan.items) {
+            if (item.closureProtected) protectedGapClosureIds.add(item.id);
+          }
+          return gapPlan;
+        }, "gap", "MIN_CUT_GAP", stagePass + 2 + pass);
+        if (!accepted) break;
+      }
+    }
+    return countValidationLocations(validation, "error") < beforeErrors;
+  };
+  const runCleanupRounds = () => {
+    for (let round = 0; round < 3; round += 1) {
+      if (!runCheckedCleanup()) break;
+    }
+  };
+
+  // Cheap deterministic cleanup reduces the graph before support planning.
+  runCleanupRounds();
+
+  if (categories.webs && connectivityErrorCount(validation) > 0) {
+    const previousMask = candidate;
+    const previousValidation = validation;
+    const previousItemsLength = items.length;
+    const previousProtectedMask = protectedMask;
+    const previousErrors = countValidationLocations(validation, "error");
+    const previousConnectivityErrors = connectivityErrorCount(validation);
+    const supportPlan = suggestKerfAwareBridges(candidate, {
+      sheet: options.sheet,
+      widthMm: Math.max(bridgeWidthMm, targetRasterWebMm),
+      anchorBoundary: false,
+      requireSingleComponent: true,
+      minimumWebMm: targetWebMm,
+      kerfMm,
+      geometryInterpretation,
+      targetMinimumWebConnectivity: false,
+      maxPasses: 8,
+      maximumBridges,
+      strategy: options.bridgeStrategy
+        ? { ...options.bridgeStrategy, maximumUnsupportedSpanMm: undefined }
+        : undefined,
+    });
+    proposedCandidateCount += supportPlan.bridges.length;
+    supportPassesRun += supportPlan.passes;
+    supportBudgetHit ||= supportPlan.capped;
+    const supportItem = supportRepairItem(candidate, supportPlan.bridges, options.sheet, "connectivity");
+    if (supportItem) {
+      candidate = applyCapsuleBridges(candidate, supportPlan.bridges, options.sheet);
+      validation = validate(candidate);
+      protectedMask = withProtectedEdits(protectedMask, supportItem.edits.enlarge.keep);
+      items.push(supportItem);
+      supportCount += supportPlan.bridges.length;
+      runCleanupRounds();
+    }
+    const improved = supportItem &&
+      connectivityErrorCount(validation) < previousConnectivityErrors &&
+      countValidationLocations(validation, "error") < previousErrors;
+    if (!improved) {
+      candidate = previousMask;
+      validation = previousValidation;
+      protectedMask = previousProtectedMask;
+      items.length = previousItemsLength;
+      supportCount = 0;
+      recordRejection(
+        "the support package did not reduce the complete blocking-error result",
+        supportPlan.bridges.length,
+      );
+      notes.push("No support package was kept because it did not reduce the complete blocking-error result.");
+    } else if (!supportPlan.complete) {
+      notes.push(`Support planning stopped at its ${maximumBridges}-tie safety limit; remaining blockers stay visible for review.`);
+    }
+  }
+
+  // Structural warnings are an explicit opt-in because correcting them can
+  // visibly thicken artwork. First join disconnected full-width cores with a
+  // sparse filter-aware tree, then try one-pixel physical dilation shells.
+  // Every candidate must keep the blocker count at zero and reduce the warning
+  // count without making another structural-warning metric worse.
+  if (categories.warnings && countValidationLocations(validation, "error") === 0) {
+    for (let pass = 1; pass <= 3 && supportCount < maximumBridges; pass += 1) {
+      if (!validation.minimumWebCoreMask || validation.minimumWebCore?.componentCount <= 1) break;
+      const available = maximumBridges - supportCount;
+      const bridges = suggestBridges(validation.minimumWebCoreMask, {
+        sheet: options.sheet,
+        widthMm: Math.max(bridgeWidthMm, targetRasterWebMm),
+        anchorBoundary: false,
+        requireSingleComponent: true,
+        minimumWebMm: targetWebMm,
+        kerfMm,
+        geometryInterpretation,
+        strategy: options.bridgeStrategy
+          ? { ...options.bridgeStrategy, maximumUnsupportedSpanMm: undefined }
+          : undefined,
+      }).filter((bridge) => !bridge.stabilizer).slice(0, available);
+      proposedCandidateCount += bridges.length;
+      const supportItem = supportRepairItem(candidate, bridges, options.sheet, `minimum-web-${pass}`);
+      if (!supportItem) break;
+      const supported = applyCapsuleBridges(candidate, bridges, options.sheet);
+      const supportedValidation = validate(supported);
+      const rejection = structuralWarningRejectionReason(validation, supportedValidation);
+      if (rejection) {
+        recordRejection(rejection, bridges.length);
+        notes.push(`The next structural-tie pass was not kept because ${rejection}`);
+        break;
+      }
+      candidate = supported;
+      validation = supportedValidation;
+      protectedMask = withProtectedEdits(protectedMask, supportItem.edits.enlarge.keep);
+      items.push(supportItem);
+      supportCount += bridges.length;
+    }
+
+    const pixel = pixelSizeMm(candidate, options.sheet);
+    const shellRadiusMm = Math.min(pixel.x, pixel.y) * 0.51;
+    const maximumShells = { preserve: 1, balanced: 2, durable: 3 }[strategy];
+    for (let pass = 1; pass <= maximumShells; pass += 1) {
+      if (structuralWarningLocationCount(validation) === 0) break;
+      const expanded = dilateMaskPhysical(candidate, shellRadiusMm, options.sheet);
+      const issueCode = validation.minimumWebCore?.retainedPixels === 0
+        ? "MIN_WEB_NO_SURVIVING_CORE"
+        : "MIN_WEB_THIN_AREAS";
+      const thickeningItem = materialAdditionRepairItem(candidate, expanded, pass, pixel, issueCode);
+      if (!thickeningItem) break;
+      proposedCandidateCount += 1;
+      const expandedValidation = validate(expanded);
+      const rejection = structuralWarningRejectionReason(validation, expandedValidation);
+      if (rejection) {
+        recordRejection(rejection);
+        notes.push(`The next material-thickening pass was not kept because ${rejection}`);
+        break;
+      }
+      candidate = expanded;
+      validation = expandedValidation;
+      items.push(thickeningItem);
+    }
+
+    const remainingStructuralWarnings = structuralWarningLocationCount(validation);
+    supportBudgetHit ||= supportCount >= maximumBridges && remainingStructuralWarnings > 0;
+    if (remainingStructuralWarnings > 0) {
+      notes.push(
+        `${remainingStructuralWarnings} structural warning ${remainingStructuralWarnings === 1 ? "location remains" : "locations remain"}; further automatic thickening would not be safely beneficial.`,
+      );
+    }
+  }
+
+  const afterValidation = validation;
+  const beforeErrors = countValidationLocations(beforeValidation, "error");
+  const afterErrors = countValidationLocations(afterValidation, "error");
+  const beforeWarnings = countValidationLocations(beforeValidation, "warning");
+  const afterWarnings = countValidationLocations(afterValidation, "warning");
+  const beforeOpeningErrors = countValidationLocations(
+    beforeValidation, "error", new Set(["MIN_OPENING_UNCUTTABLE"]),
+  );
+  const afterOpeningErrors = countValidationLocations(
+    afterValidation, "error", new Set(["MIN_OPENING_UNCUTTABLE"]),
+  );
+  const acceptedOpeningRepairs = items.filter((item) => item.category === "opening").length;
+  const improved = afterErrors < beforeErrors ||
+    (beforeErrors === 0 && afterErrors === 0 && afterWarnings < beforeWarnings);
+  const safeToApply = items.length > 0 && afterErrors <= beforeErrors && improved;
+  const counts = countRepairActions(items);
+  if (durableFallbackCategories.size > 0) {
+    notes.unshift(
+      `Used the durable fallback for ${[...durableFallbackCategories].join(", ")} only where the selected strategy failed its safety check.`,
+    );
+  }
+  if (protectedGapClosureIds.size > 0) {
+    const count = protectedGapClosureIds.size;
+    const slats = options.bridgeStrategy?.kind === "lamele";
+    const gapsRemain = afterValidation.errors.some((issue) => issue.code === "MIN_CUT_GAP");
+    notes.unshift(slats
+      ? gapsRemain
+        ? `Protected ${count} long slat ${count === 1 ? "cut" : "cuts"} from whole-cut closure. Any remaining close-gap errors need a more widely spaced Slats render or manual review.`
+        : `Protected ${count} long slat ${count === 1 ? "cut" : "cuts"} from whole-cut closure and widened the affected channels with local material.`
+      : `Protected ${count} long or significant ${count === 1 ? "cut" : "cuts"} from whole-cut closure. Any remaining close-gap errors need a roomier source pattern or manual review.`);
+  }
+  if (protectedOpeningClosureIds.size > 0) {
+    const count = protectedOpeningClosureIds.size;
+    notes.unshift(
+      afterOpeningErrors > 0
+        ? `Protected ${count} long or significant ${count === 1 ? "opening" : "openings"} from whole-opening closure. Any remaining minimum-opening errors need source-pattern adjustment or manual review.`
+        : `Protected ${count} long or significant ${count === 1 ? "opening" : "openings"} from whole-opening closure; safer neighbouring changes resolved the opening checks.`,
+    );
+  }
+  if (acceptedOpeningRepairs > 0) {
+    const resolved = Math.max(0, beforeOpeningErrors - afterOpeningErrors);
+    notes.unshift(afterOpeningErrors > 0
+      ? `Resolved ${resolved} of ${beforeOpeningErrors} minimum-opening blockers with independently validated changes; ${afterOpeningErrors} ${afterOpeningErrors === 1 ? "remains" : "remain"} because the proposed changes did not safely improve the complete geometry check.`
+      : `Resolved all ${beforeOpeningErrors} minimum-opening blockers with ${acceptedOpeningRepairs} independently validated ${acceptedOpeningRepairs === 1 ? "change" : "changes"}.`);
+  } else if (afterOpeningErrors > 0 && openingRepairRejectionReasons.size > 0) {
+    notes.unshift(
+      `${afterOpeningErrors} minimum-opening ${afterOpeningErrors === 1 ? "blocker remains" : "blockers remain"}: ${[...openingRepairRejectionReasons].join("; ")}.`,
+    );
+  }
+
+  const diagnostics = {
+    cleanupRoundsPerStageLimit: 3,
+    cleanupRoundsRun: cleanupRound,
+    supportPassLimit: 8,
+    supportPassesRun,
+    supportTieLimit: maximumBridges,
+    supportTiesAccepted: supportCount,
+    warningTiePassLimit: 3,
+    materialShellPassLimit: { preserve: 1, balanced: 2, durable: 3 }[strategy],
+    supportBudgetHit,
+    proposedCandidateCount,
+    acceptedCandidateCount: items.reduce((sum, item) => sum + (item.supportCount ?? 1), 0),
+    rejectedCandidateCount,
+    rejectionReasons: [...rejectionCounts].map(([reason, count]) => ({ reason, count })),
+  };
+  const effects = measureRepairEffects(mask, candidate, {
+    sheet: options.sheet,
+    beforeValidation,
+    afterValidation,
+  });
+  const outcome = {
+    beforeErrors,
+    afterErrors,
+    beforeWarnings,
+    afterWarnings,
+    beforeOpeningErrors,
+    afterOpeningErrors,
+    acceptedOpeningRepairs,
+    remainingOpeningErrors: afterOpeningErrors,
+    openingRepairRejectionReasons: [...openingRepairRejectionReasons],
+    beforeConnectivityErrors: connectivityErrorCount(beforeValidation),
+    afterConnectivityErrors: connectivityErrorCount(afterValidation),
+    beforeWeakWebs: weakWebCount(beforeValidation),
+    afterWeakWebs: weakWebCount(afterValidation),
+    beforeThinAreaPixels: thinAreaPixelCount(beforeValidation),
+    afterThinAreaPixels: thinAreaPixelCount(afterValidation),
+    improved,
+    safeToApply,
+    complete: afterErrors === 0,
+    effects,
+    diagnostics,
+    notes,
+  };
+  outcome.termination = describeRepairTermination(outcome, afterValidation, diagnostics);
+
+  return {
+    kind: "manufacturing",
+    strategy,
+    categories,
+    items,
+    counts,
+    supportCount,
+    mask: candidate,
+    beforeValidation,
+    afterValidation,
+    validationContract,
+    outcome,
+  };
+}
+
+/** Applies the selected action of every item to a cloned mask. */
+export function applySmallOpeningRepairPlan(mask, plan) {
+  assertMask(mask);
+  const output = cloneMask(mask);
+  for (const item of plan?.items ?? []) {
+    const edits = item.edits?.[item.action];
+    if (!edits) continue;
+    for (const index of edits.keep) output.data[index] = RETAINED;
+  }
+  // Removal wins where plans overlap. This keeps a deliberate merge open even
+  // when its neighbour was independently classified as a speck to close.
+  for (const item of plan?.items ?? []) {
+    const edits = item.edits?.[item.action];
+    if (!edits) continue;
+    for (const index of edits.remove) output.data[index] = REMOVED;
+  }
+  return output;
+}
+
+/**
+ * Composes a newly previewed mask change into an existing reversible repair
+ * layer. The `before` mask already includes that layer, so reversing one of
+ * its edits removes the old instruction instead of adding a contradictory one.
+ */
+export function mergeRepairLayerEdits(before, after, existing = null) {
+  assertMask(before);
+  assertMask(after);
+  assertSameSize(before, after);
+  const keep = new Set(existing?.keep ?? []);
+  const remove = new Set(existing?.remove ?? []);
+  for (let index = 0; index < after.data.length; index += 1) {
+    if (before.data[index] === after.data[index]) continue;
+    if (after.data[index] === RETAINED) {
+      if (!remove.delete(index)) keep.add(index);
+    } else if (!keep.delete(index)) {
+      remove.add(index);
+    }
+  }
+  return { keep, remove };
+}
+
+/** Changes one repair, or every geometrically similar repair, in place. */
+export function setSmallOpeningRepairAction(plan, itemId, action, { similar = false } = {}) {
+  if (!plan?.items) throw new TypeError("Repair plan is required");
+  if (!ACTIONS.has(action)) throw new RangeError("Unknown repair action");
+  const selected = plan.items.find((item) => item.id === itemId);
+  if (!selected || !selected.availableActions[action]) return false;
+  const targets = similar
+    ? plan.items.filter((item) => item.similarityKey === selected.similarityKey && item.availableActions[action])
+    : [selected];
+  for (const item of targets) item.action = action;
+  plan.counts = countRepairActions(plan.items);
+  return targets.length > 0;
+}
+
+function emptyPlan(strategy, targetOpeningMm, minimumWebMm) {
+  return {
+    kind: "small-openings",
+    strategy,
+    targetOpeningMm,
+    minimumWebMm,
+    items: [],
+    protectedClosureCount: 0,
+    counts: { close: 0, enlarge: 0, merge: 0 },
+  };
+}
+
+function indicesForComponent(mask, labels, component) {
+  const indices = [];
+  const bounds = component.bounds;
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      const index = y * mask.width + x;
+      if (labels[index] === component.id) indices.push(index);
+    }
+  }
+  return indices;
+}
+
+function centroid(mask, indices, bounds) {
+  if (!indices.length) {
+    return { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+  }
+  let x = 0;
+  let y = 0;
+  for (const index of indices) {
+    x += index % mask.width;
+    y += Math.floor(index / mask.width);
+  }
+  return { x: x / indices.length, y: y / indices.length };
+}
+
+function isMeaningful({ strategy, equivalentDiameterMm, longSpanMm, targetOpeningMm, elongated }) {
+  const thresholds = {
+    preserve: { diameter: 0.30, length: 0.60 },
+    balanced: { diameter: 0.62, length: 0.95 },
+    durable: { diameter: 0.88, length: 1.35 },
+  }[strategy];
+  return equivalentDiameterMm >= targetOpeningMm * thresholds.diameter ||
+    (elongated && longSpanMm >= targetOpeningMm * thresholds.length);
+}
+
+function sizeBand(ratio) {
+  if (ratio < 0.35) return "tiny";
+  if (ratio < 0.7) return "medium";
+  return "near-limit";
+}
+
+function countActions(items) {
+  const counts = { close: 0, enlarge: 0, merge: 0 };
+  for (const item of items) counts[item.action] += 1;
+  return counts;
+}
+
+function repairPlanItems(plan, category, issueCode, pass = 1) {
+  return (plan?.items ?? []).map((item) => ({
+    ...item,
+    id: `${category}-${pass}-${item.id}`,
+    category,
+    issueCode,
+  }));
+}
+
+function countRepairActions(items) {
+  const counts = { close: 0, enlarge: 0, merge: 0 };
+  for (const item of items) counts[item.action] += item.supportCount ?? 1;
+  return counts;
+}
+
+function connectivityErrorCount(validation) {
+  return countValidationLocations(validation, "error", CONNECTIVITY_ERROR_CODES);
+}
+
+function weakWebCount(validation) {
+  const codes = new Set(["MIN_WEB_NO_SURVIVING_CORE", "MIN_WEB_DISCONNECT"]);
+  return countValidationLocations(validation, "warning", codes);
+}
+
+function structuralWarningLocationCount(validation) {
+  const codes = new Set(["MIN_WEB_NO_SURVIVING_CORE", "MIN_WEB_DISCONNECT", "MIN_WEB_THIN_AREAS"]);
+  return countValidationLocations(validation, "warning", codes);
+}
+
+function thinAreaPixelCount(validation) {
+  return validation?.issues?.find((issue) =>
+    issue.code === "MIN_WEB_THIN_AREAS" || issue.code === "MIN_WEB_NO_SURVIVING_CORE")
+    ?.details?.pixelCount ?? 0;
+}
+
+/**
+ * Accept one local repair only when it resolves at least one location of the
+ * issue it targets and does not increase any other blocking issue group. This
+ * lets dense artwork retain safe fixes even when a neighbouring proposal is
+ * unsafe, without weakening the complete-design validation gate.
+ */
+function blockingRepairRejectionReason(before, after, targetCode) {
+  const onlyTarget = new Set([targetCode]);
+  const beforeTarget = countValidationLocations(before, "error", onlyTarget);
+  const afterTarget = countValidationLocations(after, "error", onlyTarget);
+  if (afterTarget >= beforeTarget) {
+    return "the proposed local change did not resolve its opening";
+  }
+
+  const codes = new Set([
+    ...(before?.errors ?? []).map((issue) => issue.code),
+    ...(after?.errors ?? []).map((issue) => issue.code),
+  ]);
+  const worsened = [...codes].filter((code) =>
+    code !== targetCode &&
+    countValidationLocations(after, "error", new Set([code])) >
+      countValidationLocations(before, "error", new Set([code])));
+  if (worsened.length > 0) {
+    return `the proposed local change would create or increase ${worsened.join(", ")}`;
+  }
+
+  return null;
+}
+
+function structuralWarningRejectionReason(before, after) {
+  const afterErrors = countValidationLocations(after, "error");
+  if (afterErrors !== 0) {
+    return `it would create ${afterErrors} blocking ${afterErrors === 1 ? "location" : "locations"}.`;
+  }
+  const beforeLocations = structuralWarningLocationCount(before);
+  const afterLocations = structuralWarningLocationCount(after);
+  const beforeWeakWebs = weakWebCount(before);
+  const afterWeakWebs = weakWebCount(after);
+  const beforeThinPixels = thinAreaPixelCount(before);
+  const afterThinPixels = thinAreaPixelCount(after);
+  if (afterLocations >= beforeLocations) return "it would not reduce the structural-warning count.";
+  if (afterWeakWebs > beforeWeakWebs) return "it would create more disconnected full-width material regions.";
+  if (afterThinPixels > beforeThinPixels) return "it would create more thin-material raster cells.";
+  return null;
+}
+
+function supportRepairItem(mask, bridges, sheet, role) {
+  if (!bridges?.length) return null;
+  const supported = applyCapsuleBridges(mask, bridges, sheet);
+  const keep = [];
+  for (let index = 0; index < supported.data.length; index += 1) {
+    if (supported.data[index] === RETAINED && mask.data[index] !== RETAINED) keep.push(index);
+  }
+  if (!keep.length) return null;
+  return {
+    id: `web-1-${role}-supports`,
+    category: "web",
+    issueCode: role === "connectivity" ? "KERF_DISCONNECTED_RETAINED_MATERIAL" : "MIN_WEB_DISCONNECT",
+    bounds: boundsForIndices(mask, keep),
+    pixelCount: keep.length,
+    supportCount: bridges.length,
+    role,
+    similarityKey: `${role}-supports`,
+    action: "enlarge",
+    recommended: "enlarge",
+    availableActions: { close: false, enlarge: true, merge: false },
+    edits: { close: null, enlarge: { keep, remove: [] }, merge: null },
+  };
+}
+
+function materialAdditionRepairItem(mask, expanded, pass, pixel, issueCode = "MIN_WEB_THIN_AREAS") {
+  const keep = [];
+  for (let index = 0; index < expanded.data.length; index += 1) {
+    if (expanded.data[index] === RETAINED && mask.data[index] !== RETAINED) keep.push(index);
+  }
+  if (!keep.length) return null;
+  return {
+    id: `warning-${pass}-thin-material-thickening`,
+    category: "warning",
+    issueCode,
+    bounds: boundsForIndices(mask, keep),
+    pixelCount: keep.length,
+    addedAreaMm2: keep.length * pixel.x * pixel.y,
+    similarityKey: `warning-thickening-${pass}`,
+    action: "enlarge",
+    recommended: "enlarge",
+    availableActions: { close: false, enlarge: true, merge: false },
+    edits: { close: null, enlarge: { keep, remove: [] }, merge: null },
+  };
+}
+
+function boundsForIndices(mask, indices) {
+  let minX = mask.width;
+  let minY = mask.height;
+  let maxX = 0;
+  let maxY = 0;
+  for (const index of indices) {
+    const x = index % mask.width;
+    const y = Math.floor(index / mask.width);
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  return { minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+function withProtectedEdits(mask, indices) {
+  const output = cloneMask(mask);
+  for (const index of indices) output.data[index] = RETAINED;
+  return output;
+}
+
+function nearestOtherOpening(mask, labels, componentId, indices, sheet, maximumGapMm) {
+  if (!(maximumGapMm > 0)) return null;
+  const pixel = pixelSizeMm(mask, sheet);
+  const radiusX = Math.max(1, Math.ceil((maximumGapMm + pixel.x) / pixel.x));
+  const radiusY = Math.max(1, Math.ceil((maximumGapMm + pixel.y) / pixel.y));
+  let best = null;
+
+  for (const index of indices) {
+    const x = index % mask.width;
+    const y = Math.floor(index / mask.width);
+    for (let dy = -radiusY; dy <= radiusY; dy += 1) {
+      for (let dx = -radiusX; dx <= radiusX; dx += 1) {
+        const targetX = x + dx;
+        const targetY = y + dy;
+        if (targetX < 0 || targetY < 0 || targetX >= mask.width || targetY >= mask.height) continue;
+        const otherId = labels[targetY * mask.width + targetX];
+        if (otherId <= 0 || otherId === componentId) continue;
+        const gapX = Math.max(0, Math.abs(dx) * pixel.x - pixel.x);
+        const gapY = Math.max(0, Math.abs(dy) * pixel.y - pixel.y);
+        const gapMm = Math.hypot(gapX, gapY);
+        if (gapMm > maximumGapMm + Number.EPSILON || gapMm >= (best?.gapMm ?? Number.POSITIVE_INFINITY)) continue;
+        best = {
+          componentId: otherId,
+          gapMm,
+          from: { x, y },
+          to: { x: targetX, y: targetY },
+        };
+      }
+    }
+  }
+  return best;
+}
+
+function unique(values) {
+  return [...new Set(values)];
+}
+
+function positive(value, name) {
+  if (!Number.isFinite(value) || value <= 0) throw new RangeError(`${name} must be positive`);
+  return value;
+}
+
+function nonNegative(value, name) {
+  if (!Number.isFinite(value) || value < 0) throw new RangeError(`${name} must be non-negative`);
+  return value;
+}

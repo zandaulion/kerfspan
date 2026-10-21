@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-label="Abstract connected panel geometry">
+  <defs>
+    <clipPath id="panel"><rect x="80" y="80" width="1440" height="840" rx="8"/></clipPath>
+    <pattern id="slats" width="86" height="86" patternUnits="userSpaceOnUse" patternTransform="rotate(22)">
+      <rect width="86" height="86" fill="#f5f3eb"/>
+      <rect width="23" height="86" fill="#203139"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="1000" fill="#203139"/>
+  <g clip-path="url(#panel)">
+    <rect x="80" y="80" width="1440" height="840" fill="url(#slats)"/>
+    <circle cx="800" cy="500" r="290" fill="#203139"/>
+    <circle cx="800" cy="500" r="215" fill="#f5f3eb"/>
+    <circle cx="800" cy="500" r="137" fill="#203139"/>
+    <path d="M510 500h580M800 210v580" stroke="#203139" stroke-width="48"/>
+    <circle cx="800" cy="500" r="55" fill="#e16440"/>
+  </g>
+  <rect x="80" y="80" width="1440" height="840" rx="8" fill="none" stroke="#f5f3eb" stroke-width="22"/>
+</svg>

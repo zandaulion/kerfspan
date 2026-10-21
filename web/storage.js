@@ -1,0 +1,744 @@
+import { normalizeCuttingProfile } from '/core/cutting-profile.js';
+import { upgradeProjectRecord } from '/core/project.js';
+import { normalizeReleaseManifest } from '/core/release-manifest.js';
+import { reconcileProjectAcknowledgement } from '/core/sync-state.js';
+
+const LEGACY_DB_NAME = 'stencil-cnc';
+const WORKSPACE_DB_PREFIX = 'stencil-cnc-workspace:';
+const DB_VERSION = 5;
+const PROJECT_STORE = 'projects';
+const META_STORE = 'meta';
+const CHECKPOINT_STORE = 'checkpoints';
+const ARTIFACT_STORE = 'artifacts';
+const SYNC_STORE = 'projectSync';
+const SERVER_ASSET_STORE = 'serverAssets';
+const SERVER_PROJECT_STORE = 'serverProjects';
+const CHECKPOINT_LIMIT = 10;
+const ARTIFACT_LIMIT = 30;
+export const LOCAL_DRAFT_PROJECT_ID = 'kerfloom-local-draft';
+let activeWorkspaceId = null;
+
+function normalizeWorkspaceId(value) {
+  const workspaceId = String(value || '').trim();
+  if (workspaceId.length < 8 || workspaceId.length > 200) {
+    throw new TypeError('A valid server workspace identifier is required');
+  }
+  return workspaceId;
+}
+
+export function workspaceDatabaseName(workspaceId) {
+  return `${WORKSPACE_DB_PREFIX}${encodeURIComponent(normalizeWorkspaceId(workspaceId))}`;
+}
+
+export function configureStorageWorkspace(workspaceId) {
+  const normalized = normalizeWorkspaceId(workspaceId);
+  if (activeWorkspaceId && activeWorkspaceId !== normalized) {
+    throw new Error('Changing workspace requires reloading Kerfspan');
+  }
+  activeWorkspaceId = normalized;
+  return activeWorkspaceId;
+}
+
+export function storageWorkspaceId() {
+  if (!activeWorkspaceId) throw new Error('The browser workspace has not been configured');
+  return activeWorkspaceId;
+}
+
+function openDatabase(databaseName = workspaceDatabaseName(storageWorkspaceId())) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(databaseName, DB_VERSION);
+    request.onerror = () => reject(request.error);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(PROJECT_STORE)) {
+        const projects = db.createObjectStore(PROJECT_STORE, { keyPath: 'id' });
+        projects.createIndex('updatedAt', 'updatedAt');
+      }
+      if (!db.objectStoreNames.contains(META_STORE)) {
+        db.createObjectStore(META_STORE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(CHECKPOINT_STORE)) {
+        const checkpoints = db.createObjectStore(CHECKPOINT_STORE, { keyPath: 'id' });
+        checkpoints.createIndex('projectId', 'projectId');
+        checkpoints.createIndex('createdAt', 'createdAt');
+      }
+      if (!db.objectStoreNames.contains(ARTIFACT_STORE)) {
+        const artifacts = db.createObjectStore(ARTIFACT_STORE, { keyPath: 'id' });
+        artifacts.createIndex('projectId', 'projectId');
+        artifacts.createIndex('createdAt', 'createdAt');
+      }
+      if (!db.objectStoreNames.contains(SYNC_STORE)) {
+        const sync = db.createObjectStore(SYNC_STORE, { keyPath: 'projectId' });
+        sync.createIndex('queuedAt', 'queuedAt');
+      }
+      if (!db.objectStoreNames.contains(SERVER_ASSET_STORE)) {
+        db.createObjectStore(SERVER_ASSET_STORE, { keyPath: 'sha256' });
+      }
+      if (!db.objectStoreNames.contains(SERVER_PROJECT_STORE)) {
+        db.createObjectStore(SERVER_PROJECT_STORE, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+function requestResult(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function migrateCachedProject(record) {
+  if (record == null) return null;
+  return upgradeProjectRecord(record);
+}
+
+async function transaction(storeName, mode, operation, workspaceId = storageWorkspaceId()) {
+  const db = await openDatabase(workspaceDatabaseName(workspaceId));
+  try {
+    const storeNames = Array.isArray(storeName) ? storeName : [storeName];
+    const tx = db.transaction(storeNames, mode);
+    const completion = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted'));
+    });
+    const stores = Array.isArray(storeName)
+      ? Object.fromEntries(storeNames.map((name) => [name, tx.objectStore(name)]))
+      : tx.objectStore(storeName);
+    let result;
+    try {
+      result = await operation(stores);
+    } catch (error) {
+      try {
+        tx.abort();
+      } catch {
+        // A failed IndexedDB request may already have aborted the transaction.
+      }
+      await completion.catch(() => {});
+      throw error;
+    }
+    await completion;
+    return result;
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveProject(record, { makeCurrent = true } = {}) {
+  const now = new Date().toISOString();
+  const migrated = migrateCachedProject(record);
+  const localDraft = migrated.localDraft === true;
+  const value = {
+    ...migrated,
+    id: localDraft ? LOCAL_DRAFT_PROJECT_ID : migrated.id || crypto.randomUUID(),
+    createdAt: migrated.createdAt || now,
+    updatedAt: now,
+    localDraft,
+    localSyncPending: localDraft ? false : record.localSyncPending !== false,
+    localChangeId: localDraft
+      ? null
+      : record.localSyncPending === false ? record.localChangeId || null : crypto.randomUUID(),
+  };
+  if (makeCurrent) {
+    await transaction([PROJECT_STORE, META_STORE], 'readwrite', async (stores) => {
+      await Promise.all([
+        requestResult(stores[PROJECT_STORE].put(value)),
+        requestResult(stores[META_STORE].put({ key: 'lastProjectId', value: value.id })),
+      ]);
+    });
+  } else {
+    await transaction(PROJECT_STORE, 'readwrite', (store) => requestResult(store.put(value)));
+  }
+  return value;
+}
+
+/** Atomically replace the single recoverable draft with a real server project. */
+export async function promoteLocalDraft(record) {
+  if (record?.localDraft !== true || record.id !== LOCAL_DRAFT_PROJECT_ID) {
+    throw new TypeError('A recoverable local draft is required');
+  }
+  const migrated = migrateCachedProject(record);
+  const now = new Date().toISOString();
+  const value = {
+    ...migrated,
+    id: crypto.randomUUID(),
+    localDraft: false,
+    localSyncPending: true,
+    localChangeId: crypto.randomUUID(),
+    serverRevision: 0,
+    serverSyncedAt: null,
+    serverSha256: null,
+    conflictOriginId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await transaction([PROJECT_STORE, META_STORE], 'readwrite', async (stores) => {
+    await Promise.all([
+      requestResult(stores[PROJECT_STORE].put(value)),
+      requestResult(stores[PROJECT_STORE].delete(LOCAL_DRAFT_PROJECT_ID)),
+      requestResult(stores[META_STORE].put({ key: 'lastProjectId', value: value.id })),
+    ]);
+  });
+  return value;
+}
+
+/** Update the browser cache without changing the project's canonical timestamps. */
+export async function cacheProject(record, { makeCurrent = false } = {}) {
+  if (!record?.id) throw new TypeError('A project identifier is required');
+  const migrated = migrateCachedProject(record);
+  await transaction(PROJECT_STORE, 'readwrite', (store) => requestResult(store.put(migrated)));
+  if (makeCurrent) await setLastProject(migrated.id);
+  return migrated;
+}
+
+export async function setLastProject(id) {
+  if (!id) return clearLastProject();
+  await transaction(META_STORE, 'readwrite', (store) => requestResult(store.put({
+    key: 'lastProjectId',
+    value: id,
+  })));
+}
+
+export async function loadProject(id) {
+  if (!id) return null;
+  const record = await transaction(PROJECT_STORE, 'readonly', (store) => requestResult(store.get(id)));
+  const migrated = migrateCachedProject(record);
+  if (record && migrated !== record) {
+    await transaction(PROJECT_STORE, 'readwrite', (store) => requestResult(store.put(migrated)));
+  }
+  return migrated;
+}
+
+export async function loadLastProject() {
+  const meta = await transaction(META_STORE, 'readonly', (store) => requestResult(store.get('lastProjectId')));
+  const project = meta?.value ? await loadProject(meta.value) : null;
+  return project?.trashedAt ? null : project;
+}
+
+export async function clearLastProject() {
+  await transaction(META_STORE, 'readwrite', (store) => requestResult(store.delete('lastProjectId')));
+}
+
+export async function loadServerAsset(sha256) {
+  const digest = String(sha256 || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(digest)) return null;
+  return transaction(SERVER_ASSET_STORE, 'readonly', (store) => requestResult(store.get(digest)));
+}
+
+export async function cacheServerAsset(asset) {
+  const value = {
+    assetId: String(asset?.id || asset?.assetId || ''),
+    sha256: String(asset?.sha256 || '').toLowerCase(),
+    kind: String(asset?.kind || ''),
+    mimeType: String(asset?.mimeType || 'application/octet-stream'),
+    sizeBytes: Number(asset?.sizeBytes ?? asset?.size) || 0,
+    cachedAt: new Date().toISOString(),
+  };
+  if (!/^[0-9a-f]{64}$/.test(value.sha256) || !value.assetId || value.sizeBytes < 1) {
+    throw new TypeError('A valid server asset receipt is required');
+  }
+  await transaction(SERVER_ASSET_STORE, 'readwrite', (store) => requestResult(store.put(value)));
+  return value;
+}
+
+export async function deleteServerAsset(sha256) {
+  const digest = String(sha256 || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(digest)) return false;
+  await transaction(SERVER_ASSET_STORE, 'readwrite', (store) => requestResult(store.delete(digest)));
+  return true;
+}
+
+export async function replaceServerProjectIndex(rows) {
+  if (!Array.isArray(rows)) throw new TypeError('Server project metadata must be an array');
+  await transaction(SERVER_PROJECT_STORE, 'readwrite', async (store) => {
+    await Promise.all([
+      requestResult(store.clear()),
+      ...rows
+        .filter((row) => row?.id)
+        .map((row) => requestResult(store.put({ ...row }))),
+    ]);
+  });
+  return rows;
+}
+
+export async function listServerProjects({ trashed = null } = {}) {
+  const rows = await transaction(
+    SERVER_PROJECT_STORE,
+    'readonly',
+    (store) => requestResult(store.getAll()),
+  );
+  return rows
+    .filter((row) => !row.deletedAt && (trashed == null || Boolean(row.trashedAt) === trashed))
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
+export async function listProjects({ trashed = false, includeDraft = false } = {}) {
+  const rows = await transaction(PROJECT_STORE, 'readonly', (store) => requestResult(store.getAll()));
+  return rows
+    .map(migrateCachedProject)
+    .filter((row) => (includeDraft || row.localDraft !== true) && Boolean(row.trashedAt) === trashed)
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
+export async function deleteProject(id) {
+  await transaction(PROJECT_STORE, 'readwrite', (store) => requestResult(store.delete(id)));
+  const checkpoints = await listCheckpoints(id);
+  for (const checkpoint of checkpoints) {
+    await transaction(CHECKPOINT_STORE, 'readwrite', (store) => requestResult(store.delete(checkpoint.id)));
+  }
+  const artifacts = await listArtifacts(id);
+  for (const artifact of artifacts) {
+    await transaction(ARTIFACT_STORE, 'readwrite', (store) => requestResult(store.delete(artifact.id)));
+  }
+  const meta = await transaction(META_STORE, 'readonly', (store) => requestResult(store.get('lastProjectId')));
+  if (meta?.value === id) await clearLastProject();
+}
+
+export async function clearProjectAssets(id) {
+  const checkpoints = await listCheckpoints(id);
+  for (const checkpoint of checkpoints) {
+    await transaction(CHECKPOINT_STORE, 'readwrite', (store) => requestResult(store.delete(checkpoint.id)));
+  }
+  const artifacts = await listArtifacts(id);
+  for (const artifact of artifacts) {
+    await transaction(ARTIFACT_STORE, 'readwrite', (store) => requestResult(store.delete(artifact.id)));
+  }
+}
+
+function importedCheckpoint(projectId, checkpoint) {
+  const value = {
+    id: crypto.randomUUID(),
+    projectId,
+    label: String(checkpoint?.label || 'Imported recovery point').slice(0, 120),
+    createdAt: typeof checkpoint?.createdAt === 'string'
+      ? checkpoint.createdAt
+      : new Date().toISOString(),
+    project: checkpoint?.project ? migrateCachedProject(checkpoint.project) : null,
+  };
+  if (!value.project || typeof value.project !== 'object' || Array.isArray(value.project)) {
+    throw new TypeError('An editable checkpoint project is required');
+  }
+  return value;
+}
+
+function importedArtifact(projectId, artifact) {
+  if (!(artifact?.blob instanceof Blob)) {
+    throw new TypeError('A saved project and Blob artefact are required');
+  }
+  return {
+    id: crypto.randomUUID(),
+    projectId,
+    filename: String(artifact.filename || 'shared-artefact').slice(0, 240),
+    kind: String(artifact.kind || 'file').slice(0, 30),
+    mimeType: String(artifact.mimeType || artifact.blob.type || 'application/octet-stream').slice(0, 120),
+    createdAt: typeof artifact.createdAt === 'string'
+      ? artifact.createdAt
+      : new Date().toISOString(),
+    profileSnapshot: artifact.profileSnapshot
+      ? normalizeCuttingProfile(JSON.parse(JSON.stringify(artifact.profileSnapshot)))
+      : null,
+    releaseManifest: normalizeReleaseManifest(artifact.releaseManifest),
+    blob: artifact.blob,
+  };
+}
+
+/**
+ * Replace a downloaded project's complete local cache as one IndexedDB commit.
+ * Values are normalized before the transaction starts; clone/quota failures
+ * abort that transaction so the prior usable revision remains complete.
+ */
+export async function replaceProjectCache(
+  record,
+  { checkpoints = [], artifacts = [], makeCurrent = false } = {},
+) {
+  if (!record?.id) throw new TypeError('A project identifier is required');
+  if (!Array.isArray(checkpoints) || !Array.isArray(artifacts)) {
+    throw new TypeError('Project checkpoints and artefacts must be arrays');
+  }
+  const migratedRecord = migrateCachedProject(record);
+  const preparedCheckpoints = checkpoints
+    .slice(0, CHECKPOINT_LIMIT)
+    .map((checkpoint) => importedCheckpoint(record.id, checkpoint));
+  const preparedArtifacts = artifacts
+    .slice(0, ARTIFACT_LIMIT)
+    .map((artifact) => importedArtifact(record.id, artifact));
+  const storeNames = [PROJECT_STORE, CHECKPOINT_STORE, ARTIFACT_STORE];
+  if (makeCurrent) storeNames.push(META_STORE);
+
+  await transaction(storeNames, 'readwrite', async (stores) => {
+    const [checkpointIds, artifactIds] = await Promise.all([
+      requestResult(stores[CHECKPOINT_STORE].index('projectId').getAllKeys(record.id)),
+      requestResult(stores[ARTIFACT_STORE].index('projectId').getAllKeys(record.id)),
+    ]);
+    const writes = [];
+    const queue = (request) => {
+      const pending = requestResult(request);
+      // If a later `put` throws synchronously (for example DataCloneError),
+      // the outer transaction aborts. Mark already queued request rejections
+      // as observed while still allowing Promise.all below to propagate them.
+      pending.catch(() => {});
+      writes.push(pending);
+    };
+    queue(stores[PROJECT_STORE].put(migratedRecord));
+    for (const id of checkpointIds) queue(stores[CHECKPOINT_STORE].delete(id));
+    for (const id of artifactIds) queue(stores[ARTIFACT_STORE].delete(id));
+    for (const checkpoint of preparedCheckpoints) {
+      queue(stores[CHECKPOINT_STORE].put(checkpoint));
+    }
+    for (const artifact of preparedArtifacts) {
+      queue(stores[ARTIFACT_STORE].put(artifact));
+    }
+    if (makeCurrent) {
+      queue(stores[META_STORE].put({ key: 'lastProjectId', value: record.id }));
+    }
+    await Promise.all(writes);
+  });
+  return migratedRecord;
+}
+
+function normalizedProjectSyncOperation(operation) {
+  if (!operation?.projectId || !['put', 'delete'].includes(operation.kind)) {
+    throw new TypeError('A valid project sync operation is required');
+  }
+  const value = {
+    ...operation,
+    projectId: String(operation.projectId),
+    workspaceId: operation.workspaceId || storageWorkspaceId(),
+    operationId: operation.operationId || crypto.randomUUID(),
+    queuedAt: operation.queuedAt || new Date().toISOString(),
+  };
+  if (value.workspaceId !== storageWorkspaceId()) {
+    throw new Error('A sync operation cannot cross browser workspaces');
+  }
+  return value;
+}
+
+export async function putProjectSync(operation) {
+  const value = normalizedProjectSyncOperation(operation);
+  await transaction(SYNC_STORE, 'readwrite', (store) => requestResult(store.put(value)));
+  return value;
+}
+
+/**
+ * Atomically replaces a conflicted operation with its deterministic copy.
+ * Retrying this transition is harmless: another tab may already have moved
+ * the same operation, in which case its replacement is returned unchanged.
+ */
+export async function replaceProjectSyncOperation(
+  projectId,
+  operationId,
+  replacement,
+  { workspaceId = storageWorkspaceId() } = {},
+) {
+  const value = normalizedProjectSyncOperation({ ...replacement, workspaceId });
+  if (value.projectId === projectId) {
+    throw new TypeError('A conflict replacement requires a new project identifier');
+  }
+  return transaction(SYNC_STORE, 'readwrite', async (store) => {
+    const current = await requestResult(store.get(projectId));
+    if (!current || current.operationId !== operationId) {
+      const existing = await requestResult(store.get(value.projectId));
+      return { replaced: false, operation: existing || null };
+    }
+    await requestResult(store.delete(projectId));
+    await requestResult(store.put(value));
+    return { replaced: true, operation: value };
+  }, workspaceId);
+}
+
+export async function loadProjectSync(projectId, { workspaceId = storageWorkspaceId() } = {}) {
+  if (!projectId) return null;
+  return transaction(SYNC_STORE, 'readonly', (store) => requestResult(store.get(projectId)), workspaceId);
+}
+
+export async function listProjectSync({ workspaceId = storageWorkspaceId() } = {}) {
+  const rows = await transaction(SYNC_STORE, 'readonly', (store) => requestResult(store.getAll()), workspaceId);
+  return rows.sort((a, b) => String(a.queuedAt).localeCompare(String(b.queuedAt)));
+}
+
+export async function deleteProjectSync(projectId, operationId = null, { workspaceId = storageWorkspaceId() } = {}) {
+  if (!projectId) return false;
+  return transaction(SYNC_STORE, 'readwrite', async (store) => {
+    if (operationId) {
+      const current = await requestResult(store.get(projectId));
+      if (!current || current.operationId !== operationId) return false;
+    }
+    await requestResult(store.delete(projectId));
+    return true;
+  }, workspaceId);
+}
+
+/**
+ * Commits a server acknowledgement without allowing it to erase a newer
+ * queued edit. If another operation replaced the acknowledged one, that
+ * operation is rebased onto the returned server revision in the same
+ * transaction and remains pending.
+ */
+export async function acknowledgeProjectSync(
+  projectId,
+  operationId,
+  metadata,
+  { workspaceId = storageWorkspaceId() } = {},
+) {
+  return transaction([PROJECT_STORE, SYNC_STORE], 'readwrite', async (stores) => {
+    const [local, pending] = await Promise.all([
+      requestResult(stores[PROJECT_STORE].get(projectId)),
+      requestResult(stores[SYNC_STORE].get(projectId)),
+    ]);
+    const revision = Number(metadata?.revision) || 0;
+    const reconciliation = reconcileProjectAcknowledgement(pending, operationId, revision);
+    const acknowledgesCurrentChange = reconciliation.exact && (
+      !pending?.localChangeId || pending.localChangeId === local?.localChangeId
+    );
+    const project = local ? {
+      ...local,
+      serverRevision: revision,
+      serverSyncedAt: new Date().toISOString(),
+      serverSha256: metadata?.sha256 || null,
+      localSyncPending: acknowledgesCurrentChange
+        ? false
+        : Boolean(local.localSyncPending || reconciliation.pending),
+    } : null;
+    if (project) await requestResult(stores[PROJECT_STORE].put(project));
+
+    const nextPending = reconciliation.pending;
+    if (reconciliation.exact) {
+      await requestResult(stores[SYNC_STORE].delete(projectId));
+    } else if (nextPending) {
+      await requestResult(stores[SYNC_STORE].put(nextPending));
+    }
+    return { ...reconciliation, project };
+  }, workspaceId);
+}
+
+export async function setStorageMeta(key, value) {
+  await transaction(META_STORE, 'readwrite', (store) => requestResult(store.put({ key, value })));
+}
+
+export async function loadStorageMeta(key) {
+  const row = await transaction(META_STORE, 'readonly', (store) => requestResult(store.get(key)));
+  return row?.value;
+}
+
+export async function updateProject(id, changes) {
+  const current = await loadProject(id);
+  if (!current) throw new RangeError('Project not found');
+  const localSyncPending = changes.localSyncPending !== false;
+  const value = {
+    ...current,
+    ...changes,
+    id,
+    updatedAt: new Date().toISOString(),
+    localSyncPending,
+    localChangeId: localSyncPending ? crypto.randomUUID() : current.localChangeId || null,
+  };
+  await transaction(PROJECT_STORE, 'readwrite', (store) => requestResult(store.put(value)));
+  return value;
+}
+
+export async function trashProject(id) {
+  const value = await updateProject(id, { trashedAt: new Date().toISOString() });
+  const meta = await transaction(META_STORE, 'readonly', (store) => requestResult(store.get('lastProjectId')));
+  if (meta?.value === id) await clearLastProject();
+  return value;
+}
+
+export async function restoreProject(id) {
+  return updateProject(id, { trashedAt: null });
+}
+
+export async function saveCheckpoint(project, label) {
+  if (!project?.id) throw new TypeError('A saved project is required for a checkpoint');
+  const { localSource: _localSource, ...portableProject } = project;
+  const checkpoint = {
+    id: crypto.randomUUID(),
+    projectId: project.id,
+    label: String(label || 'Automatic checkpoint'),
+    createdAt: new Date().toISOString(),
+    project: portableProject,
+  };
+  await transaction(CHECKPOINT_STORE, 'readwrite', (store) => requestResult(store.put(checkpoint)));
+  const checkpoints = await listCheckpoints(project.id);
+  for (const stale of checkpoints.slice(CHECKPOINT_LIMIT)) {
+    await transaction(CHECKPOINT_STORE, 'readwrite', (store) => requestResult(store.delete(stale.id)));
+  }
+  return checkpoint;
+}
+
+export async function listCheckpoints(projectId) {
+  if (!projectId) return [];
+  const rows = await transaction(CHECKPOINT_STORE, 'readonly', (store) => (
+    requestResult(store.index('projectId').getAll(projectId))
+  ));
+  return rows
+    .map((row) => ({ ...row, project: migrateCachedProject(row.project) }))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function importCheckpoint(projectId, checkpoint) {
+  const value = importedCheckpoint(projectId, checkpoint);
+  await transaction(CHECKPOINT_STORE, 'readwrite', (store) => requestResult(store.put(value)));
+  return value;
+}
+
+export async function saveArtifact(projectId, artifact) {
+  if (!projectId || !(artifact?.blob instanceof Blob)) {
+    throw new TypeError('A saved project and Blob artefact are required');
+  }
+  const value = {
+    id: crypto.randomUUID(),
+    projectId,
+    filename: String(artifact.filename || 'project-artefact').slice(0, 240),
+    kind: String(artifact.kind || 'file').slice(0, 30),
+    mimeType: String(artifact.mimeType || artifact.blob.type || 'application/octet-stream').slice(0, 120),
+    createdAt: new Date().toISOString(),
+    profileSnapshot: artifact.profileSnapshot
+      ? normalizeCuttingProfile(JSON.parse(JSON.stringify(artifact.profileSnapshot)))
+      : null,
+    releaseManifest: normalizeReleaseManifest(artifact.releaseManifest),
+    blob: artifact.blob,
+  };
+  await transaction(ARTIFACT_STORE, 'readwrite', (store) => requestResult(store.put(value)));
+  const artifacts = await listArtifacts(projectId);
+  for (const stale of artifacts.slice(ARTIFACT_LIMIT)) {
+    await transaction(ARTIFACT_STORE, 'readwrite', (store) => requestResult(store.delete(stale.id)));
+  }
+  return value;
+}
+
+export async function importArtifact(projectId, artifact) {
+  if (!projectId) {
+    throw new TypeError('A saved project and Blob artefact are required');
+  }
+  const value = importedArtifact(projectId, artifact);
+  await transaction(ARTIFACT_STORE, 'readwrite', (store) => requestResult(store.put(value)));
+  return value;
+}
+
+export async function listArtifacts(projectId) {
+  if (!projectId) return [];
+  const rows = await transaction(ARTIFACT_STORE, 'readonly', (store) => (
+    requestResult(store.index('projectId').getAll(projectId))
+  ));
+  return rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function saveShareSecret(id, token) {
+  if (!id || !token) return;
+  await transaction(META_STORE, 'readwrite', (store) => requestResult(store.put({
+    key: `shareSecret:${id}`,
+    value: String(token),
+  })));
+}
+
+export async function loadShareSecret(id) {
+  if (!id) return null;
+  const row = await transaction(META_STORE, 'readonly', (store) => (
+    requestResult(store.get(`shareSecret:${id}`))
+  ));
+  return typeof row?.value === 'string' ? row.value : null;
+}
+
+export async function deleteShareSecret(id) {
+  if (!id) return;
+  await transaction(META_STORE, 'readwrite', (store) => requestResult(store.delete(`shareSecret:${id}`)));
+}
+
+async function legacyRows(storeName) {
+  const db = await openDatabase(LEGACY_DB_NAME);
+  try {
+    const tx = db.transaction(storeName, 'readonly');
+    const rows = await requestResult(tx.objectStore(storeName).getAll());
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Legacy storage transaction aborted'));
+    });
+    return rows;
+  } finally {
+    db.close();
+  }
+}
+
+async function importedLegacyProjectIds() {
+  const value = await loadStorageMeta('legacyImportedProjectIds:v1');
+  return new Set(Array.isArray(value) ? value.map(String) : []);
+}
+
+/** Returns quarantined browser-only projects that have not been imported here. */
+export async function legacyProjectSummary() {
+  const [projects, imported] = await Promise.all([
+    legacyRows(PROJECT_STORE),
+    importedLegacyProjectIds(),
+  ]);
+  const available = projects.filter((project) => !imported.has(String(project.id)));
+  return {
+    count: available.length,
+    names: available.slice(0, 3).map((project) => String(project.name || 'Untitled panel')),
+  };
+}
+
+/**
+ * Copies legacy origin-wide projects into the active workspace as new,
+ * unsynced projects. Originals remain untouched so an ambiguous ownership
+ * decision is always recoverable.
+ */
+export async function importLegacyProjects() {
+  const [projects, checkpoints, artifacts, imported] = await Promise.all([
+    legacyRows(PROJECT_STORE),
+    legacyRows(CHECKPOINT_STORE),
+    legacyRows(ARTIFACT_STORE),
+    importedLegacyProjectIds(),
+  ]);
+  const importedProjects = [];
+  for (const source of projects) {
+    const sourceId = String(source.id);
+    if (imported.has(sourceId)) continue;
+    const id = crypto.randomUUID();
+    const project = {
+      ...source,
+      id,
+      name: `${String(source.name || 'Untitled panel')} (legacy import)`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      trashedAt: null,
+      serverRevision: 0,
+      serverSyncedAt: null,
+      serverSha256: null,
+    };
+    try {
+      const cachedProject = await cacheProject(project);
+      for (const checkpoint of checkpoints.filter((entry) => entry.projectId === source.id)) {
+        await importCheckpoint(id, {
+          ...checkpoint,
+          project: { ...checkpoint.project, id },
+        });
+      }
+      for (const artifact of artifacts.filter((entry) => entry.projectId === source.id)) {
+        await importArtifact(id, artifact);
+      }
+      imported.add(sourceId);
+      await setStorageMeta('legacyImportedProjectIds:v1', [...imported]);
+      importedProjects.push(cachedProject);
+    } catch (error) {
+      await deleteProject(id).catch(() => {});
+      throw error;
+    }
+  }
+  return importedProjects;
+}
+
+export function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export function downloadText(filename, text, type = 'application/json') {
+  downloadBlob(filename, new Blob([text], { type }));
+}

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Kerfspan maskable icon</title>
+  <desc id="desc">A bridged K cut through a dark metal panel.</desc>
+  <defs>
+    <linearGradient id="bg" x1="40" y1="30" x2="472" y2="492" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#263c46"/>
+      <stop offset="1" stop-color="#101b21"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <path fill="#f7f7f3" d="M108 104h92v102l101-102h113L276 246l146 162H305L200 292v116h-92V104Z"/>
+  <path fill="#e45f35" d="M174 207h78v84h-78z"/>
+</svg>
