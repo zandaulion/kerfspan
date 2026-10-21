@@ -593,15 +593,27 @@
               </div>
 
               <div id="style-dots" hidden>
+                <label class="field-row" for="style-dot-layout">
+                  <span>Layout <small>How the dots are arranged</small></span>
+                  <select id="style-dot-layout" name="styleDotLayout">
+                    <option value="grila" selected>Fixed grid</option>
+                    <option value="imbricat">Nested grid</option>
+                    <option value="stipplu">Stipple</option>
+                  </select>
+                </label>
                 <label class="field-row" for="style-dot-pitch">
-                  <span>Dot pitch <small>Centre-to-centre spacing</small></span>
+                  <span><span id="style-dot-pitch-title">Dot pitch</span> <small id="style-dot-pitch-help">Centre-to-centre spacing</small></span>
                   <span class="number-field compact"><input id="style-dot-pitch" name="styleDotPitch" type="number" min="5" max="80" step="0.5" value="41"><span data-unit-label>mm</span></span>
+                </label>
+                <label class="field-row" for="style-dot-pitch-dark" id="style-dot-pitch-dark-row" hidden>
+                  <span>Dark-area pitch <small>Spacing where the picture is darkest</small></span>
+                  <span class="number-field compact"><input id="style-dot-pitch-dark" name="styleDotPitchDark" type="number" min="5" max="80" step="0.5" value="5"><span data-unit-label>mm</span></span>
                 </label>
                 <label class="field-row" for="style-dot-max">
                   <span>Maximum dot diameter <small>Automatically limited by the required metal gap</small></span>
                   <span class="number-field compact"><input id="style-dot-max" name="styleDotMax" type="number" min="2" max="70" step="0.1" value="33.8"><span data-unit-label>mm</span></span>
                 </label>
-                <label class="field-row" for="style-dot-angle">
+                <label class="field-row" for="style-dot-angle" id="style-dot-angle-row">
                   <span>Grid angle</span>
                   <span class="number-field compact"><input id="style-dot-angle" name="styleDotAngle" type="number" min="-90" max="90" step="5" value="10"><span>°</span></span>
                 </label>
@@ -609,7 +621,7 @@
                   <label for="style-dot-cutoff"><span>Dark-area cutoff <small>Suppresses dots in deep shadows</small></span><output id="style-dot-cutoff-value" for="style-dot-cutoff">42%</output></label>
                   <input id="style-dot-cutoff" name="styleDotCutoff" type="range" min="0" max="60" step="1" value="42">
                 </div>
-                <p class="section-help">The plasma minimum opening sets the smallest dot. Every dot remains a complete circle.</p>
+                <p class="section-help" id="style-dot-layout-help">The plasma minimum opening sets the smallest dot. Every dot remains a complete circle.</p>
               </div>
 
               <span id="style-photo-common-home" hidden></span>

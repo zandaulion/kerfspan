@@ -1073,6 +1073,11 @@ function styleParams(stil = selectedCutStyle()) {
     form.set('diametru_max_puncte_mm', String(toMm(numberField('style-dot-max', 33.8))));
     form.set('unghi_puncte', String(numberField('style-dot-angle', 10)));
     form.set('prag_puncte', String(numberField('style-dot-cutoff', 42) / 100));
+    const layout = dotLayout();
+    form.set('aranjare_puncte', layout);
+    if (layout !== 'grila') {
+      form.set('pas_min_puncte_mm', String(toMm(numberField('style-dot-pitch-dark', 5))));
+    }
   } else if (stil === 'linii') {
     form.set('detaliu_linii', String(numberField('style-line-detail', 40) / 100));
     form.set('latime_linie_mm', String(toMm(numberField('style-line-width', 2))));
@@ -1142,7 +1147,9 @@ function enforceStyleSpacing() {
   const spacingFields = style === 'hasura'
     ? [['style-row-pitch', 'row spacing'], ['style-cell', 'stroke cell']]
     : style === 'puncte'
-      ? [['style-dot-pitch', 'dot pitch']]
+      ? dotLayout() === 'grila'
+        ? [['style-dot-pitch', 'dot pitch']]
+        : [['style-dot-pitch', 'light-area pitch'], ['style-dot-pitch-dark', 'dark-area pitch']]
     : style === 'gravura'
       ? [['style-wood-spacing', 'mark spacing']]
     : style === 'flux'
@@ -1188,6 +1195,15 @@ function enforceStyleSpacing() {
     } else if (numberField('style-ray-hub', 50) > maximumDiameter) {
       node.value = roundUnit(maximumDiameter);
       ajustate.push({ id: 'style-ray-hub', label: 'solid hub diameter', value: node.value, unit: state.unit });
+    }
+  }
+  if (style === 'puncte' && dotLayout() !== 'grila') {
+    const dark = el('style-dot-pitch-dark');
+    const light = numberField('style-dot-pitch', 41);
+    dark.max = String(roundUnit(light));
+    if (numberField('style-dot-pitch-dark', 5) > light) {
+      dark.value = roundUnit(light);
+      ajustate.push({ id: 'style-dot-pitch-dark', label: 'dark-area pitch', value: dark.value, unit: state.unit });
     }
   }
   if (style === 'puncte') {
@@ -1717,6 +1733,30 @@ function isJsonResponse(response) {
   return /\bjson\b/i.test(response.headers.get('content-type') || '');
 }
 
+function dotLayout() {
+  const value = el('style-dot-layout')?.value;
+  return ['imbricat', 'stipplu'].includes(value) ? value : 'grila';
+}
+
+function reflectDotLayoutControls() {
+  const layout = dotLayout();
+  const variable = layout !== 'grila';
+  el('style-dot-pitch-dark-row')?.toggleAttribute('hidden', !variable);
+  el('style-dot-angle-row')?.toggleAttribute('hidden', layout === 'stipplu');
+  const title = el('style-dot-pitch-title');
+  if (title) title.textContent = variable ? 'Light-area pitch' : 'Dot pitch';
+  const help = el('style-dot-pitch-help');
+  if (help) help.textContent = variable ? 'Spacing where the picture is brightest' : 'Centre-to-centre spacing';
+  const layoutHelp = el('style-dot-layout-help');
+  if (layoutHelp) {
+    layoutHelp.textContent = {
+      grila: 'The plasma minimum opening sets the smallest dot. Every dot remains a complete circle.',
+      imbricat: 'The grid halves its pitch in steps as the picture darkens: big dots in the light, finer dots in the shadows. Raise the light-area pitch for bigger dots.',
+      stipplu: 'Dots are spaced freely, closer together as the picture darkens, with no visible grid. Raise the light-area pitch for bigger dots.',
+    }[layout];
+  }
+}
+
 function setStyleStatus(text) {
   const node = el('style-status');
   if (node) node.textContent = text;
@@ -1742,6 +1782,7 @@ function reflectModeControls() {
   el('style-slats')?.toggleAttribute('hidden', style !== 'lamele');
   el('style-hatch')?.toggleAttribute('hidden', style !== 'hasura');
   el('style-dots')?.toggleAttribute('hidden', style !== 'puncte');
+  reflectDotLayoutControls();
   el('style-linework')?.toggleAttribute('hidden', style !== 'linii');
   el('style-woodcut')?.toggleAttribute('hidden', style !== 'gravura');
   el('style-flow')?.toggleAttribute('hidden', style !== 'flux');
@@ -4045,6 +4086,8 @@ function applyControls(controls = {}) {
     'artwork-rotation': '0',
     'artwork-offset-x': '0',
     'artwork-offset-y': '0',
+    // Projects saved before dot layouts existed always used the fixed grid.
+    'style-dot-layout': 'grila',
   })) {
     if (!Object.hasOwn(controls, id)) migratedControls[id] = value;
   }
@@ -8935,6 +8978,7 @@ function wire() {
     'style-icon-line-width', 'style-icon-simplify', 'style-icon-halo', 'style-icon-halo-scale',
     'style-pitch', 'style-slat-angle', 'style-angle',
     'style-dot-pitch', 'style-dot-max', 'style-dot-angle', 'style-dot-cutoff',
+    'style-dot-layout', 'style-dot-pitch-dark',
     'style-row-pitch', 'style-cell', 'style-tone-brightness', 'style-tone-contrast',
     'style-gain', 'style-smooth', 'style-curve',
     'style-line-detail', 'style-line-width', 'style-wood-spacing', 'style-wood-length',
@@ -8948,6 +8992,7 @@ function wire() {
       if (STYLE_SHARED_CONTROL_IDS.includes(id)) rememberStyleSettings();
       if (id === 'style-ray-center-auto') reflectRayCentreControls();
       if (id === 'style-icon-halo') reflectModeControls();
+      if (id === 'style-dot-layout') reflectDotLayoutControls();
       updateRangeOutputs();
       restyle();
     });
@@ -9070,7 +9115,7 @@ function wire() {
       'style-wood-spacing', 'style-wood-length', 'style-silhouette-smooth',
       'style-flow-pitch', 'style-flow-width', 'style-flow-smooth',
       'style-contour-width', 'style-ray-cell', 'style-ray-hub', 'style-ornament-width',
-      'style-dot-pitch', 'style-dot-max']) {
+      'style-dot-pitch', 'style-dot-pitch-dark', 'style-dot-max']) {
       const node = el(id);
       if (!node || node.value === '') continue;
       const mm = previous === 'in' ? Number(node.value) * MM_PER_INCH : Number(node.value);

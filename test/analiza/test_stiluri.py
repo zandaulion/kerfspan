@@ -658,3 +658,80 @@ class TestStiluriDinReferinte(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _cercuri_mm(cercuri, latime_px):
+    latime_mm = latime_px * MM_PE_PX
+    return [(x * latime_mm, y * latime_mm, r * latime_mm) for x, y, r in cercuri]
+
+
+def _cel_mai_mic_gol(cercuri):
+    gol = float("inf")
+    for i, (x, y, r) in enumerate(cercuri):
+        for X, Y, R in cercuri[i + 1:]:
+            gol = min(gol, float(np.hypot(x - X, y - Y)) - r - R)
+    return gol
+
+
+class TestPuncteAranjariVariabile(unittest.TestCase):
+    """Nested and stipple layouts: bigger, sparser dots in the light."""
+
+    def camp_gradient(self):
+        # Dark on the left, light on the right; 0 is light in the tone field.
+        latime = 360
+        return np.tile(np.linspace(1.0, 0.0, latime, dtype=np.float32), (200, 1))
+
+    def genereaza(self, aranjare):
+        camp = self.camp_gradient()
+        _, cercuri = puncte_variabile(
+            camp, MM_PE_PX, pas_mm=20, diametru_max_mm=17, pas_min_mm=5,
+            fanta_min_mm=2, punte_min_mm=3, prag=0.2, aranjare=aranjare,
+            returneaza_geometrie=True,
+        )
+        return _cercuri_mm(cercuri, camp.shape[1])
+
+    def test_respecta_deschiderea_si_puntea_minime(self):
+        for aranjare in ("imbricat", "stipplu"):
+            with self.subTest(aranjare=aranjare):
+                cercuri = self.genereaza(aranjare)
+                self.assertGreater(len(cercuri), 20)
+                self.assertGreaterEqual(min(2 * r for *_, r in cercuri), 2.0 - 1e-6)
+                self.assertLessEqual(max(2 * r for *_, r in cercuri), 17.0 + 1e-6)
+                self.assertGreaterEqual(_cel_mai_mic_gol(cercuri), 3.0 - 1e-6)
+
+    def test_lumina_are_puncte_mai_mari_si_mai_rare(self):
+        for aranjare in ("imbricat", "stipplu"):
+            with self.subTest(aranjare=aranjare):
+                cercuri = self.genereaza(aranjare)
+                latime_mm = 360 * MM_PE_PX
+                intunecat = [r for x, _, r in cercuri if x < latime_mm * 0.45]
+                luminos = [r for x, _, r in cercuri if x > latime_mm * 0.75]
+                self.assertTrue(intunecat and luminos)
+                self.assertGreater(np.mean(luminos), 2 * np.mean(intunecat))
+                # Same strip width, so the count compares density.
+                self.assertGreater(len(intunecat) / 0.45, len(luminos) / 0.25)
+
+    def test_stipplu_este_reproductibil(self):
+        self.assertEqual(self.genereaza("stipplu"), self.genereaza("stipplu"))
+
+    def test_masca_corespunde_cercurilor(self):
+        camp = self.camp_gradient()
+        masca, cercuri = puncte_variabile(
+            camp, MM_PE_PX, pas_mm=20, diametru_max_mm=17, pas_min_mm=5,
+            fanta_min_mm=2, punte_min_mm=3, prag=0.2, aranjare="imbricat",
+            returneaza_geometrie=True,
+        )
+        for x, y, _ in cercuri[:50]:
+            self.assertFalse(masca[int(y * camp.shape[0]), int(x * camp.shape[1])])
+
+    def test_pas_intunecat_invalid_e_refuzat(self):
+        camp = self.camp_gradient()
+        with self.assertRaises(ReglajImposibil):
+            puncte_variabile(camp, MM_PE_PX, pas_mm=20, diametru_max_mm=17, pas_min_mm=4,
+                             fanta_min_mm=2, punte_min_mm=3, aranjare="imbricat")
+        with self.assertRaises(ReglajImposibil):
+            puncte_variabile(camp, MM_PE_PX, pas_mm=10, diametru_max_mm=7, pas_min_mm=12,
+                             fanta_min_mm=2, punte_min_mm=3, aranjare="stipplu")
+        with self.assertRaises(ReglajImposibil):
+            puncte_variabile(camp, MM_PE_PX, pas_mm=10, diametru_max_mm=7,
+                             fanta_min_mm=2, punte_min_mm=3, aranjare="spirala")

@@ -892,3 +892,12 @@ test('the exact Variable Dots layer is shown by its hidden attribute', () => {
   assert.doesNotMatch(editor, /layer\.hidden\s*=/);
   assert.match(editor, /function drawVectorDotPreview[\s\S]*?layer\.removeAttribute\('hidden'\)/);
 });
+
+test('Variable dots offers fixed, nested, and stipple layouts', () => {
+  assert.match(html, /<select id="style-dot-layout"[\s\S]*?value="grila" selected>Fixed grid[\s\S]*?value="imbricat">Nested grid[\s\S]*?value="stipplu">Stipple/);
+  assert.match(html, /id="style-dot-pitch-dark"/);
+  assert.match(editor, /form\.set\('aranjare_puncte', layout\)/);
+  assert.match(editor, /form\.set\('pas_min_puncte_mm'/);
+  // Older projects have no layout control and must keep the fixed grid.
+  assert.match(editor, /'style-dot-layout': 'grila'/);
+});

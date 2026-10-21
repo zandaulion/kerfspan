@@ -1147,8 +1147,17 @@ def puncte_variabile(
     unghi: float = 10.0,
     zona: np.ndarray | None = None,
     returneaza_geometrie: bool = False,
+    aranjare: str = "grila",
+    pas_min_mm: float | None = None,
 ) -> np.ndarray | tuple[np.ndarray, list[list[float]]]:
     """Circular halftone openings whose diameter follows local light.
+
+    ``aranjare`` chooses the layout. ``"grila"`` is the original fixed
+    lattice described below. ``"imbricat"`` nests lattices whose pitch halves
+    from ``pas_mm`` in the light towards ``pas_min_mm`` in the dark, and
+    ``"stipplu"`` relaxes free points so their spacing follows the same range.
+    Both variable layouts size every circle against its actual neighbours, so
+    the finished web and minimum opening hold by construction.
 
     Centres sit on a staggered triangular lattice.  That gives the reference's
     regular field without favouring vertical columns, and its nearest-neighbour
@@ -1180,6 +1189,19 @@ def puncte_variabile(
         raise ReglajImposibil("The dot threshold must be between 0 and 1.")
     if not np.isfinite(unghi) or not -90.0 <= unghi <= 90.0:
         raise ReglajImposibil("The dot grid angle must be between -90 and 90 degrees.")
+    if aranjare not in ARANJARI_PUNCTE:
+        raise ReglajImposibil(f"Unknown dot layout: {aranjare}.")
+    if aranjare != "grila":
+        pas_min_mm = pas_mm if pas_min_mm is None else float(pas_min_mm)
+        if not np.isfinite(pas_min_mm) or pas_min_mm < fanta_min_mm + punte_min_mm:
+            raise ReglajImposibil(
+                f"The dark-area pitch must be at least "
+                f"{fanta_min_mm + punte_min_mm:.2f} mm to hold a dot and its web."
+            )
+        if pas_min_mm > pas_mm:
+            raise ReglajImposibil(
+                "The dark-area pitch cannot be larger than the light-area pitch."
+            )
     _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm, "The dot": fanta_min_mm})
 
     inaltime, latime = camp.shape
@@ -1205,6 +1227,14 @@ def puncte_variabile(
     )
     lumina = np.clip(1.0 - camp_netezit, 0.0, 1.0)
     zona_bool = np.ones(camp.shape, dtype=bool) if zona is None else zona.astype(bool)
+    if aranjare != "grila":
+        return _puncte_variabile_libere(
+            lumina, zona_bool, mm_pe_px, aranjare=aranjare,
+            pas_max_mm=pas_mm, pas_min_mm=pas_min_mm,
+            diametru_max_mm=diametru_max_fizic_mm, fanta_min_mm=fanta_min_mm,
+            punte_min_mm=punte_min_mm, gamma=gamma, prag=prag, unghi=unghi,
+            returneaza_geometrie=returneaza_geometrie,
+        )
     taiat = np.zeros(camp.shape, dtype=np.uint8)
     cercuri: list[list[float]] = []
 
@@ -1256,5 +1286,206 @@ def puncte_variabile(
                 round(float(raza / latime), 8),
             ])
 
+    masca = ~(taiat > 0)
+    return (masca, cercuri) if returneaza_geometrie else masca
+
+
+ARANJARI_PUNCTE = ("grila", "imbricat", "stipplu")
+# Relaxation converges quickly at halftone scale; more passes only polish.
+_ITERATII_STIPPLU = 18
+_MAX_NIVELURI_IMBRICATE = 4
+
+
+def _pas_local_px(valoare, pas_min_px: float, pas_max_px: float):
+    """Pitch asked for by the light: dark-area pitch at the cutoff, light-area at full light."""
+    return pas_min_px + (pas_max_px - pas_min_px) * np.clip(valoare, 0.0, 1.0)
+
+
+def _candidati_imbricati(
+    valoare: np.ndarray, zona: np.ndarray, pas_max_px: float, pas_min_px: float, unghi: float,
+) -> list[tuple[float, float, float]]:
+    """Nested triangular lattices; each level halves the pitch of the last.
+
+    Every point of a coarse lattice is also a point of the finer ones. Each
+    point is therefore generated once on the finest lattice, knows the
+    coarsest level it belongs to, and is kept when the local light asks for
+    at least that density.
+    """
+    niveluri = 1
+    while (niveluri < _MAX_NIVELURI_IMBRICATE and
+           pas_max_px / 2 ** niveluri >= pas_min_px - 1e-9):
+        niveluri += 1
+    pas_fin_px = pas_max_px / 2 ** (niveluri - 1)
+    inaltime, latime = valoare.shape
+    pas_rand_px = pas_fin_px * np.sqrt(3.0) / 2.0
+    raza_camp = np.hypot(latime, inaltime) / 2.0 + pas_max_px * 2.0
+    rad = np.radians(unghi)
+    cosinus, sinus = float(np.cos(rad)), float(np.sin(rad))
+    cx, cy = (latime - 1) / 2.0, (inaltime - 1) / 2.0
+    candidati: list[tuple[float, float, float]] = []
+    for rand in range(int(np.floor(-raza_camp / pas_rand_px)), int(np.ceil(raza_camp / pas_rand_px)) + 1):
+        for coloana in range(int(np.floor(-raza_camp / pas_fin_px)) - 1, int(np.ceil(raza_camp / pas_fin_px)) + 2):
+            u = coloana * pas_fin_px + (pas_fin_px / 2.0 if rand & 1 else 0.0)
+            v = rand * pas_rand_px
+            x = cx + u * cosinus - v * sinus
+            y = cy + u * sinus + v * cosinus
+            ix, iy = int(round(x)), int(round(y))
+            if not (0 <= ix < latime and 0 <= iy < inaltime) or not zona[iy, ix]:
+                continue
+            t = float(valoare[iy, ix])
+            if t <= 0.0:
+                continue
+            # Axial coordinates: x = q + r/2 in units of the fine pitch. The
+            # lattice of pitch fine * 2**m is where both are divisible by 2**m.
+            q, r = coloana - rand // 2, rand
+            nivel_punct = niveluri - 1
+            for m in range(niveluri - 1, 0, -1):
+                if q % (2 ** m) == 0 and r % (2 ** m) == 0:
+                    nivel_punct = niveluri - 1 - m
+                    break
+            pas_dorit = float(_pas_local_px(t, pas_min_px, pas_max_px))
+            nivel_dorit = int(np.clip(np.round(np.log2(pas_max_px / pas_dorit)), 0, niveluri - 1))
+            if nivel_punct <= nivel_dorit:
+                candidati.append((x, y, pas_max_px / 2 ** nivel_dorit))
+    return candidati
+
+
+def _candidati_stipplu(
+    valoare: np.ndarray, zona: np.ndarray, pas_max_px: float, pas_min_px: float,
+) -> list[tuple[float, float, float]]:
+    """Weighted Lloyd relaxation (Secord stippling) on the tone raster.
+
+    Point density follows 1 / pitch**2, so relaxed spacing approaches the
+    local pitch. The seed is fixed, so the same settings always give the same
+    pattern and a re-render never reshuffles a finished design.
+    """
+    activ = zona & (valoare > 0.0)
+    if not activ.any():
+        return []
+    pas = _pas_local_px(valoare, pas_min_px, pas_max_px)
+    densitate = np.where(activ, 1.0 / (pas * pas), 0.0).astype(np.float64)
+    # A triangular lattice of pitch p holds one point per p * p * sqrt(3) / 2.
+    numar = int(round(float(densitate.sum()) * 2.0 / np.sqrt(3.0)))
+    numar = min(numar, int(np.count_nonzero(activ)))
+    if numar <= 0:
+        return []
+    inaltime, latime = valoare.shape
+    generator = np.random.default_rng(20261021)
+    probabilitate = densitate.ravel() / densitate.sum()
+    alese = generator.choice(probabilitate.size, size=numar, replace=False, p=probabilitate)
+    puncte = np.column_stack((alese % latime + 0.5, alese // latime + 0.5)).astype(np.float64)
+    ys, xs = np.nonzero(activ)
+    greutati = densitate[ys, xs]
+    for _ in range(_ITERATII_STIPPLU):
+        seminte = np.full((inaltime, latime), 255, np.uint8)
+        px = np.clip(puncte[:, 0].astype(int), 0, latime - 1)
+        py = np.clip(puncte[:, 1].astype(int), 0, inaltime - 1)
+        seminte[py, px] = 0
+        _, etichete = cv2.distanceTransformWithLabels(
+            seminte, cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL,
+        )
+        # Pixel labels number the seed pixels; map each label to its seed.
+        seminte_y, seminte_x = np.nonzero(seminte == 0)
+        index_eticheta = np.zeros(int(etichete.max()) + 1, np.int64)
+        index_eticheta[etichete[seminte_y, seminte_x]] = np.arange(seminte_y.size)
+        celula = index_eticheta[etichete[ys, xs]]
+        masa = np.bincount(celula, weights=greutati, minlength=seminte_y.size)
+        sx = np.bincount(celula, weights=greutati * (xs + 0.5), minlength=seminte_y.size)
+        sy = np.bincount(celula, weights=greutati * (ys + 0.5), minlength=seminte_y.size)
+        pastrate = masa > 0
+        puncte = np.column_stack((sx[pastrate] / masa[pastrate], sy[pastrate] / masa[pastrate]))
+    candidati: list[tuple[float, float, float]] = []
+    for x, y in puncte:
+        ix, iy = int(x), int(y)
+        if 0 <= ix < latime and 0 <= iy < inaltime and activ[iy, ix]:
+            # Circle centres use the same convention as the lattices: pixel
+            # (i, j) has its centre at (i, j).
+            candidati.append((float(x - 0.5), float(y - 0.5), float(pas[iy, ix])))
+    return candidati
+
+
+def _dimensioneaza_cercuri(
+    candidati: list[tuple[float, float, float]], valoare: np.ndarray, *,
+    diametru_max_px: float, fanta_px: float, punte_px: float, gamma: float,
+) -> list[tuple[float, float, float]]:
+    """Gives each candidate its tonal diameter, then fits it to its neighbours.
+
+    Largest wishes are placed first. A circle may use whatever its placed
+    neighbours leave after the web while still reserving a minimum opening for
+    neighbours not yet placed. A circle that cannot keep the minimum opening is
+    dropped rather than shrunk below what the cutter can make.
+    """
+    if not candidati:
+        return []
+    raza_min = fanta_px / 2.0
+    inaltime, latime = valoare.shape
+    dorite = []
+    for x, y, pas_local in candidati:
+        iy = min(inaltime - 1, max(0, int(round(y))))
+        ix = min(latime - 1, max(0, int(round(x))))
+        t = float(np.clip(valoare[iy, ix], 0.0, 1.0))
+        maxim = max(fanta_px, min(diametru_max_px, pas_local - punte_px))
+        dorite.append((fanta_px + (t ** gamma) * (maxim - fanta_px)) / 2.0)
+    # Two circles further apart than this can never constrain each other.
+    celula = max(1.0, diametru_max_px + punte_px)
+    grila: dict[tuple[int, int], list[int]] = {}
+    for indice, (x, y, _) in enumerate(candidati):
+        grila.setdefault((int(x // celula), int(y // celula)), []).append(indice)
+    raze: list[float | None] = [None] * len(candidati)
+    abandonat = [False] * len(candidati)
+    for indice in sorted(range(len(candidati)), key=lambda k: -dorite[k]):
+        x, y, _ = candidati[indice]
+        raza = dorite[indice]
+        gx, gy = int(x // celula), int(y // celula)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                for vecin in grila.get((gx + dx, gy + dy), ()):
+                    if vecin == indice or abandonat[vecin]:
+                        continue
+                    distanta = float(np.hypot(candidati[vecin][0] - x, candidati[vecin][1] - y))
+                    rezervat = raze[vecin] if raze[vecin] is not None else raza_min
+                    raza = min(raza, distanta - punte_px - rezervat)
+        # Clipped semicircles at the artwork edge are not the motif.
+        if (raza + 1e-9 < raza_min or x + 0.5 - raza < 0 or x + 0.5 + raza > latime or
+                y + 0.5 - raza < 0 or y + 0.5 + raza > inaltime):
+            abandonat[indice] = True
+            continue
+        raze[indice] = raza
+    return [(x, y, raze[k]) for k, (x, y, _) in enumerate(candidati) if raze[k] is not None]
+
+
+def _puncte_variabile_libere(
+    lumina: np.ndarray, zona: np.ndarray, mm_pe_px: float, *, aranjare: str,
+    pas_max_mm: float, pas_min_mm: float, diametru_max_mm: float, fanta_min_mm: float,
+    punte_min_mm: float, gamma: float, prag: float, unghi: float, returneaza_geometrie: bool,
+):
+    inaltime, latime = lumina.shape
+    # 0 at the dark-area cutoff, 1 at full light; at or below 0 means no dot.
+    valoare = (lumina - prag) / (1.0 - prag)
+    pas_max_px = pas_max_mm / mm_pe_px
+    pas_min_px = pas_min_mm / mm_pe_px
+    if aranjare == "imbricat":
+        candidati = _candidati_imbricati(valoare, zona, pas_max_px, pas_min_px, unghi)
+    else:
+        candidati = _candidati_stipplu(valoare, zona, pas_max_px, pas_min_px)
+    cercuri_px = _dimensioneaza_cercuri(
+        candidati, valoare,
+        diametru_max_px=diametru_max_mm / mm_pe_px, fanta_px=fanta_min_mm / mm_pe_px,
+        punte_px=punte_min_mm / mm_pe_px, gamma=gamma,
+    )
+    taiat = np.zeros(lumina.shape, dtype=np.uint8)
+    cercuri: list[list[float]] = []
+    for x, y, raza in cercuri_px:
+        x0 = max(0, int(np.floor(x - raza)))
+        x1 = min(latime - 1, int(np.ceil(x + raza)))
+        y0 = max(0, int(np.floor(y - raza)))
+        y1 = min(inaltime - 1, int(np.ceil(y + raza)))
+        yy, xx = np.ogrid[y0:y1 + 1, x0:x1 + 1]
+        taiat[y0:y1 + 1, x0:x1 + 1][(xx - x) ** 2 + (yy - y) ** 2 <= raza ** 2] = 1
+        cercuri.append([
+            round(float((x + 0.5) / latime), 8),
+            round(float((y + 0.5) / inaltime), 8),
+            round(float(raza / latime), 8),
+        ])
     masca = ~(taiat > 0)
     return (masca, cercuri) if returneaza_geometrie else masca

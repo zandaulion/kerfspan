@@ -233,6 +233,9 @@ async def analizeaza(
     diametru_max_puncte_mm: float = Form(33.8),
     unghi_puncte: float = Form(10.0),
     prag_puncte: float = Form(0.42),
+    # Older clients send neither; the fixed grid is then exactly as before.
+    aranjare_puncte: str = Form("grila"),
+    pas_min_puncte_mm: float | None = Form(None),
     # physical limits
     punte_min_mm: float = Form(3.0),
     fanta_min_mm: float = Form(2.0),
@@ -362,6 +365,7 @@ async def analizeaza(
                 fanta_min_mm=fanta_min_mm, punte_min_mm=punte_min_mm,
                 gamma=gamma, prag=prag_puncte, unghi=unghi_puncte,
                 zona=masca_subiect, returneaza_geometrie=True,
+                aranjare=aranjare_puncte, pas_min_mm=pas_min_puncte_mm,
             )
             info_suplimentar = {
                 "vectorDots": {

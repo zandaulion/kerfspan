@@ -67,7 +67,7 @@ Processing a style is not the same as validating it. The canvas distinguishes a 
 | Geometric patterns | **Slats** | Parallel bars whose thickness carries the image. |
 |  | **Hatch** | A regular line rhythm with light regions opened. |
 |  | **Radial cuts** | Dashes radiating from a chosen focal point and solid hub. |
-|  | **Variable dots** | Staggered circular openings sized by local light. |
+|  | **Variable dots** | Circular openings sized by local light. Layouts: a fixed staggered grid; a nested grid whose pitch halves in steps as the picture darkens; or stipple, with freely spaced dots that crowd together in the shadows. The variable layouts use a light-area and a dark-area pitch. |
 | Decorative | **Ornamental symmetry** | Mirrored linework for a balanced motif. |
 
 The recommendation panel converts the current panel size and manufacturing limits into an explicit starting point. If Kerfspan clamps a pitch, width, or diameter to preserve a configured limit, it explains the adjustment beside the affected control. Recommendations remain creative starting points, not machine certification.
