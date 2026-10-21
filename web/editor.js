@@ -1627,9 +1627,22 @@ async function renderStyle() {
     : 'Rendering on the server…');
   const hadPlacedMask = Boolean(state.sourceMask);
   try {
-    const response = await fetch('/api/analizeaza', {
+    const send = () => fetch('/api/analizeaza', {
       method: 'POST', body: styleParams(requestedStyle), credentials: 'same-origin', signal: styleAbort.signal,
     });
+    let response = await send();
+    // A gateway error during a server restart is transient; one retry hides it.
+    if ([502, 503, 504].includes(response.status) && !isJsonResponse(response)) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (mine !== styleToken) return false;
+      response = await send();
+    }
+    if (!isJsonResponse(response)) {
+      // An HTML page here never comes from Kerfspan itself: it is a proxy or
+      // Cloudflare answering instead, often a VPN challenge or a restart.
+      throw new Error(`The server could not be reached properly (HTTP ${response.status}). ` +
+        'If a VPN is on, try without it; otherwise retry in a moment');
+    }
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || payload.message || `Failed (${response.status})`);
     // A slower earlier answer must not overwrite a newer one: the same race
@@ -1698,6 +1711,10 @@ async function renderStyle() {
       }
     }
   }
+}
+
+function isJsonResponse(response) {
+  return /\bjson\b/i.test(response.headers.get('content-type') || '');
 }
 
 function setStyleStatus(text) {
