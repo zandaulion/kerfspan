@@ -136,6 +136,10 @@ import {
 // be. 900 across matches the analysis service, and keeps a rebuild under a
 // frame on a laptop.
 const RASTER_LONG_EDGE = 900;
+// The analysis service never works wider than this (LATIME_MAX in
+// analiza/app.py) and shrinks anything larger on arrival, so sending the
+// full camera original only makes every render a slower upload.
+const ANALYSIS_MAX_WIDTH = 2600;
 const MAX_SHEET_LONG_EDGE = 2600;
 const MM_PER_INCH = 25.4;
 const PLASMA_MIN_OPENING_MM = 2;
@@ -1007,7 +1011,7 @@ function rebuildSource() {
 function styleParams(stil = selectedCutStyle()) {
   const stilApi = stil === 'line-art' ? 'linie_art' : stil;
   const form = new FormData();
-  form.set('foto', state.source.file, state.source.name);
+  form.set('foto', state.source.uploadFile ?? state.source.file, state.source.name);
   form.set('stil', stilApi);
   const sourceSize = { width: state.source.width, height: state.source.height };
   const placement = calculateArtworkPlacement(sourceSize, sheet(), {
@@ -6124,9 +6128,24 @@ async function decodeSourceFile(file, fallbackName = 'Source image') {
     originalHeight: bitmap.height,
     name: file.name || fallbackName,
     bytes: file.size,
+    uploadFile: await analysisUploadFile(file, bitmap),
   };
   bitmap.close?.();
   return decoded;
+}
+
+async function analysisUploadFile(file, bitmap) {
+  if (bitmap.width <= ANALYSIS_MAX_WIDTH) return file;
+  const width = ANALYSIS_MAX_WIDTH;
+  const height = Math.max(1, Math.round(bitmap.height * width / bitmap.width));
+  const canvas = new OffscreenCanvas(width, height);
+  const context = canvas.getContext('2d');
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(bitmap, 0, 0, width, height);
+  // PNG keeps line-art transparency; photographs travel as high-quality JPEG.
+  const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+  const blob = await canvas.convertToBlob({ type, quality: 0.92 });
+  return blob.size < file.size ? blob : file;
 }
 
 async function decodeTonePreview(payload) {
