@@ -4,6 +4,13 @@
 
 Kerfspan turns photographs and prepared artwork into connected, manufacturing-aware geometry for CNC plasma cutting. It combines creative image treatments with panel layout, support design, physical validation, manual touch-ups, server-backed project management, and export in one installable web application.
 
+For a fresh self-hosted installation, download the
+[v0.1.0 source kit and checksum](https://github.com/zandaulion/kerfspan/releases/tag/v0.1.0).
+It has a Compose setup, the bundled model, a synthetic geometric example,
+and installation/backup notes. Its tagged source omits portrait-derived
+screenshots and production-specific configuration. The [Quick start](#quick-start)
+below describes the development repository checkout.
+
 The maintained deployment is [kerfspan.com](https://kerfspan.com). It requires
 an invitation. The former `kerfloom.zandaulion.com` address remains an active
 compatibility alias during the transition.
