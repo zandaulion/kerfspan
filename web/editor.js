@@ -6133,7 +6133,15 @@ function applyCanonicalProjectControls(project) {
   reflectModeControls();
 }
 
-async function decodeSourceFile(file, fallbackName = 'Source image') {
+async function decodeSourceFile(input, fallbackName = 'Source image') {
+  // Hold the bytes in memory. A Blob read back from IndexedDB is backed by a
+  // file the browser may delete when the same record is saved again (Firefox
+  // does); every later cache write and render upload then fails to read it,
+  // and the upload reaches Cloudflare short of its Content-Length (HTTP 400).
+  const file = new File([await input.arrayBuffer()], input.name || fallbackName, {
+    type: input.type,
+    lastModified: input.lastModified ?? Date.now(),
+  });
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, RASTER_LONG_EDGE / Math.max(bitmap.width, bitmap.height));
   const width = Math.max(1, Math.round(bitmap.width * scale));
