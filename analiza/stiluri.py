@@ -1154,8 +1154,10 @@ def puncte_variabile(
 
     ``aranjare`` chooses the layout. ``"grila"`` is the original fixed
     lattice described below. ``"imbricat"`` nests lattices whose pitch halves
-    from ``pas_mm`` in the light towards ``pas_min_mm`` in the dark, and
+    between ``pas_mm`` in the light and ``pas_min_mm`` in the dark, and
     ``"stipplu"`` relaxes free points so their spacing follows the same range.
+    Despite its name ``pas_min_mm`` is simply the dark-area pitch: it may be
+    larger than ``pas_mm`` for dense light and sparse shadows.
     Both variable layouts size every circle against its actual neighbours, so
     the finished web and minimum opening hold by construction.
 
@@ -1198,10 +1200,6 @@ def puncte_variabile(
                 f"The dark-area pitch must be at least "
                 f"{fanta_min_mm + punte_min_mm:.2f} mm to hold a dot and its web."
             )
-        if pas_min_mm > pas_mm:
-            raise ReglajImposibil(
-                "The dark-area pitch cannot be larger than the light-area pitch."
-            )
     _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm, "The dot": fanta_min_mm})
 
     inaltime, latime = camp.shape
@@ -1230,7 +1228,7 @@ def puncte_variabile(
     if aranjare != "grila":
         return _puncte_variabile_libere(
             lumina, zona_bool, mm_pe_px, aranjare=aranjare,
-            pas_max_mm=pas_mm, pas_min_mm=pas_min_mm,
+            pas_luminos_mm=pas_mm, pas_intunecat_mm=pas_min_mm,
             diametru_max_mm=diametru_max_fizic_mm, fanta_min_mm=fanta_min_mm,
             punte_min_mm=punte_min_mm, gamma=gamma, prag=prag, unghi=unghi,
             returneaza_geometrie=returneaza_geometrie,
@@ -1296,13 +1294,14 @@ _ITERATII_STIPPLU = 18
 _MAX_NIVELURI_IMBRICATE = 4
 
 
-def _pas_local_px(valoare, pas_min_px: float, pas_max_px: float):
+def _pas_local_px(valoare, pas_intunecat_px: float, pas_luminos_px: float):
     """Pitch asked for by the light: dark-area pitch at the cutoff, light-area at full light."""
-    return pas_min_px + (pas_max_px - pas_min_px) * np.clip(valoare, 0.0, 1.0)
+    return pas_intunecat_px + (pas_luminos_px - pas_intunecat_px) * np.clip(valoare, 0.0, 1.0)
 
 
 def _candidati_imbricati(
-    valoare: np.ndarray, zona: np.ndarray, pas_max_px: float, pas_min_px: float, unghi: float,
+    valoare: np.ndarray, zona: np.ndarray, pas_luminos_px: float, pas_intunecat_px: float,
+    unghi: float,
 ) -> list[tuple[float, float, float]]:
     """Nested triangular lattices; each level halves the pitch of the last.
 
@@ -1311,6 +1310,10 @@ def _candidati_imbricati(
     coarsest level it belongs to, and is kept when the local light asks for
     at least that density.
     """
+    # The coarse lattice is wherever the wider pitch is asked for: the light by
+    # default, the shadows when they are meant to be sparser.
+    pas_max_px = max(pas_luminos_px, pas_intunecat_px)
+    pas_min_px = min(pas_luminos_px, pas_intunecat_px)
     niveluri = 1
     while (niveluri < _MAX_NIVELURI_IMBRICATE and
            pas_max_px / 2 ** niveluri >= pas_min_px - 1e-9):
@@ -1343,7 +1346,7 @@ def _candidati_imbricati(
                 if q % (2 ** m) == 0 and r % (2 ** m) == 0:
                     nivel_punct = niveluri - 1 - m
                     break
-            pas_dorit = float(_pas_local_px(t, pas_min_px, pas_max_px))
+            pas_dorit = float(_pas_local_px(t, pas_intunecat_px, pas_luminos_px))
             nivel_dorit = int(np.clip(np.round(np.log2(pas_max_px / pas_dorit)), 0, niveluri - 1))
             if nivel_punct <= nivel_dorit:
                 candidati.append((x, y, pas_max_px / 2 ** nivel_dorit))
@@ -1351,7 +1354,7 @@ def _candidati_imbricati(
 
 
 def _candidati_stipplu(
-    valoare: np.ndarray, zona: np.ndarray, pas_max_px: float, pas_min_px: float,
+    valoare: np.ndarray, zona: np.ndarray, pas_luminos_px: float, pas_intunecat_px: float,
 ) -> list[tuple[float, float, float]]:
     """Weighted Lloyd relaxation (Secord stippling) on the tone raster.
 
@@ -1362,7 +1365,7 @@ def _candidati_stipplu(
     activ = zona & (valoare > 0.0)
     if not activ.any():
         return []
-    pas = _pas_local_px(valoare, pas_min_px, pas_max_px)
+    pas = _pas_local_px(valoare, pas_intunecat_px, pas_luminos_px)
     densitate = np.where(activ, 1.0 / (pas * pas), 0.0).astype(np.float64)
     # A triangular lattice of pitch p holds one point per p * p * sqrt(3) / 2.
     numar = int(round(float(densitate.sum()) * 2.0 / np.sqrt(3.0)))
@@ -1456,18 +1459,18 @@ def _dimensioneaza_cercuri(
 
 def _puncte_variabile_libere(
     lumina: np.ndarray, zona: np.ndarray, mm_pe_px: float, *, aranjare: str,
-    pas_max_mm: float, pas_min_mm: float, diametru_max_mm: float, fanta_min_mm: float,
+    pas_luminos_mm: float, pas_intunecat_mm: float, diametru_max_mm: float, fanta_min_mm: float,
     punte_min_mm: float, gamma: float, prag: float, unghi: float, returneaza_geometrie: bool,
 ):
     inaltime, latime = lumina.shape
     # 0 at the dark-area cutoff, 1 at full light; at or below 0 means no dot.
     valoare = (lumina - prag) / (1.0 - prag)
-    pas_max_px = pas_max_mm / mm_pe_px
-    pas_min_px = pas_min_mm / mm_pe_px
+    pas_luminos_px = pas_luminos_mm / mm_pe_px
+    pas_intunecat_px = pas_intunecat_mm / mm_pe_px
     if aranjare == "imbricat":
-        candidati = _candidati_imbricati(valoare, zona, pas_max_px, pas_min_px, unghi)
+        candidati = _candidati_imbricati(valoare, zona, pas_luminos_px, pas_intunecat_px, unghi)
     else:
-        candidati = _candidati_stipplu(valoare, zona, pas_max_px, pas_min_px)
+        candidati = _candidati_stipplu(valoare, zona, pas_luminos_px, pas_intunecat_px)
     cercuri_px = _dimensioneaza_cercuri(
         candidati, valoare,
         diametru_max_px=diametru_max_mm / mm_pe_px, fanta_px=fanta_min_mm / mm_pe_px,

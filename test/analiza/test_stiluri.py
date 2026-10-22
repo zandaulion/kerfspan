@@ -730,8 +730,26 @@ class TestPuncteAranjariVariabile(unittest.TestCase):
             puncte_variabile(camp, MM_PE_PX, pas_mm=20, diametru_max_mm=17, pas_min_mm=4,
                              fanta_min_mm=2, punte_min_mm=3, aranjare="imbricat")
         with self.assertRaises(ReglajImposibil):
-            puncte_variabile(camp, MM_PE_PX, pas_mm=10, diametru_max_mm=7, pas_min_mm=12,
-                             fanta_min_mm=2, punte_min_mm=3, aranjare="stipplu")
-        with self.assertRaises(ReglajImposibil):
             puncte_variabile(camp, MM_PE_PX, pas_mm=10, diametru_max_mm=7,
                              fanta_min_mm=2, punte_min_mm=3, aranjare="spirala")
+
+
+    def test_umbre_mai_rare_cand_pasul_intunecat_e_mai_mare(self):
+        """Dense big dots in the light, sparse small dots in the shadows."""
+        camp = self.camp_gradient()
+        latime_mm = camp.shape[1] * MM_PE_PX
+        for aranjare in ("imbricat", "stipplu"):
+            with self.subTest(aranjare=aranjare):
+                _, cercuri = puncte_variabile(
+                    camp, MM_PE_PX, pas_mm=8, diametru_max_mm=5, pas_min_mm=24,
+                    fanta_min_mm=2, punte_min_mm=3, prag=0.2, aranjare=aranjare,
+                    returneaza_geometrie=True,
+                )
+                cercuri = _cercuri_mm(cercuri, camp.shape[1])
+                self.assertGreaterEqual(min(2 * r for *_, r in cercuri), 2.0 - 1e-6)
+                self.assertGreaterEqual(_cel_mai_mic_gol(cercuri), 3.0 - 1e-6)
+                intunecat = [r for x, _, r in cercuri if x < latime_mm * 0.45]
+                luminos = [r for x, _, r in cercuri if x > latime_mm * 0.75]
+                self.assertTrue(intunecat and luminos)
+                self.assertGreater(np.mean(luminos), np.mean(intunecat))
+                self.assertGreater(len(luminos) / 0.25, 2 * len(intunecat) / 0.45)

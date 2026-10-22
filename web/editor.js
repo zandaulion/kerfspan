@@ -1197,15 +1197,6 @@ function enforceStyleSpacing() {
       ajustate.push({ id: 'style-ray-hub', label: 'solid hub diameter', value: node.value, unit: state.unit });
     }
   }
-  if (style === 'puncte' && dotLayout() !== 'grila') {
-    const dark = el('style-dot-pitch-dark');
-    const light = numberField('style-dot-pitch', 41);
-    dark.max = String(roundUnit(light));
-    if (numberField('style-dot-pitch-dark', 5) > light) {
-      dark.value = roundUnit(light);
-      ajustate.push({ id: 'style-dot-pitch-dark', label: 'dark-area pitch', value: dark.value, unit: state.unit });
-    }
-  }
   if (style === 'puncte') {
     const node = el('style-dot-max');
     const maximumDiameterMm = Math.max(slot, toMm(numberField('style-dot-pitch', 41)) - web);
@@ -1751,8 +1742,8 @@ function reflectDotLayoutControls() {
   if (layoutHelp) {
     layoutHelp.textContent = {
       grila: 'The plasma minimum opening sets the smallest dot. Every dot remains a complete circle.',
-      imbricat: 'The grid halves its pitch in steps as the picture darkens: big dots in the light, finer dots in the shadows. Raise the light-area pitch for bigger dots.',
-      stipplu: 'Dots are spaced freely, closer together as the picture darkens, with no visible grid. Raise the light-area pitch for bigger dots.',
+      imbricat: 'The grid changes its pitch in halving steps between the light and dark areas. A dark-area pitch larger than the light-area pitch packs the light densely and leaves the shadows sparse; a smaller one does the reverse. The light-area pitch limits the largest dot.',
+      stipplu: 'Dots are spaced freely between the light-area and dark-area pitch, with no visible grid. A dark-area pitch larger than the light-area pitch packs the light densely and leaves the shadows sparse. The light-area pitch limits the largest dot.',
     }[layout];
   }
 }
