@@ -24,7 +24,6 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npm test
-      - name: Install Chromium for browser tests
+      - name: Install Chromium (npm test includes the browser tests)
         run: npx --no-install playwright install --with-deps chromium
-      - run: npm run test:browser
+      - run: npm test
