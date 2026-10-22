@@ -71,7 +71,8 @@ test('prepared vectors are the geometry written by SVG and DXF exporters', () =>
   const svg = exportSvg(mask, { widthMm: 40, heightMm: 40 }, { preparedGeometry });
   const dxf = exportDxf(mask, { widthMm: 40, heightMm: 40 }, { preparedGeometry });
   assert.match(svg, /d="M0 0L40 0L20 40Z"/);
-  assert.match(dxf, /\n90\n3\n70\n1\n/);
+  assert.match(dxf, /\n0\nPOLYLINE\n[\s\S]*?\n70\n1\n/);
+  assert.equal((dxf.match(/\n0\nVERTEX\n/g) ?? []).length, 3);
 });
 
 test('exact circle substitutions are rasterized for post-fit manufacturing checks', () => {
