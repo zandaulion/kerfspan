@@ -1,7 +1,7 @@
 :root {
   --ink: #142129;
   --ink-soft: #31414b;
-  --muted: #687780;
+  --muted: #616f78;
   --faint: #97a2a8;
   --paper: #f7f7f3;
   --surface: #ffffff;
@@ -352,7 +352,7 @@ svg {
   align-items: center;
   flex-wrap: wrap;
   margin-top: 13px;
-  color: var(--faint);
+  color: var(--muted);
   font-size: 0.72rem;
   line-height: 1.45;
 }
@@ -1761,7 +1761,7 @@ input[type="range"] {
 .range-ends {
   display: flex;
   justify-content: space-between;
-  color: var(--faint);
+  color: var(--muted);
   font-size: 0.57rem;
 }
 
@@ -4109,7 +4109,7 @@ select:focus {
 
 .empty-state small {
   margin-top: 9px;
-  color: var(--faint);
+  color: var(--muted);
   font-size: 0.54rem;
 }
 
@@ -4271,7 +4271,7 @@ select:focus {
 }
 
 .filter-chip span {
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .repair-panel {
