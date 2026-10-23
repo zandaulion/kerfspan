@@ -1,8 +1,8 @@
 # Versions proven on aarch64. mediapipe 0.10.x has no wheel for that
 # architecture; 1.0.1 does.
-fastapi==0.141.1
-uvicorn[standard]==0.52.4
+fastapi==0.152.0
+uvicorn[standard]==0.54.0
 python-multipart==0.0.32
-numpy==2.4.6
+numpy==2.5.4
 opencv-contrib-python-headless==5.0.0.93
-mediapipe==1.0.1
+mediapipe==1.1.1
