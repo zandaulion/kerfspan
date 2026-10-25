@@ -1,12 +1,13 @@
 import { physicalDiscIndices, physicalStrokeIndices } from "./editing.js";
 import { applyCapsuleBridges } from "./bridges.js";
 import { dilateMaskPhysical } from "./morphology.js";
+import { validateManufacturingGeometry } from "./manufacturing-geometry.js";
 import { suggestBridges, suggestKerfAwareBridges } from "./suggestions.js";
 import {
   GEOMETRY_VALIDATION_MODEL_VERSION,
   countValidationLocations,
-  validateDesign,
 } from "./validation.js";
+import { VECTOR_SIMPLIFICATION_MODEL_VERSION } from "./vector-geometry.js";
 import {
   FINISHED_BOUNDARY_CAM,
   normalizeGeometryInterpretation,
@@ -567,17 +568,23 @@ export function planManufacturingRepairs(mask, options) {
     : { width: mask.width, height: mask.height, data: new Uint8Array(mask.data.length) };
   assertSameSize(mask, protectedMask);
 
-  const validate = (candidate) => validateDesign(candidate, {
-    sheet: options.sheet,
-    kerfMm,
-    minimumWebMm,
-    minimumOpeningMm,
-    geometryInterpretation,
-    anchorBoundary: false,
-    requireAnchored: false,
-    requireSingleComponent: true,
-    exactCircleHoles: options.exactCircleHoles,
-  });
+  const checkedGeometry = new WeakMap();
+  const validate = (candidate) => {
+    const checked = validateManufacturingGeometry(candidate, {
+      sheet: options.sheet,
+      kerfMm,
+      minimumWebMm,
+      minimumOpeningMm,
+      geometryInterpretation,
+      anchorBoundary: false,
+      requireAnchored: false,
+      requireSingleComponent: true,
+      exactCircleHoles: options.exactCircleHoles,
+      vectorOptions: options.vectorOptions,
+    });
+    checkedGeometry.set(candidate, checked);
+    return checked.validation;
+  };
   const beforeValidation = validate(mask);
   const validationContract = {
     modelVersion: GEOMETRY_VALIDATION_MODEL_VERSION,
@@ -588,6 +595,9 @@ export function planManufacturingRepairs(mask, options) {
     minimumOpeningMm,
     targetWebMm,
     targetOpeningMm,
+    ...(options.vectorOptions?.slatHighlights?.regions?.length ? {
+      vectorProcessing: { modelVersion: VECTOR_SIMPLIFICATION_MODEL_VERSION, mode: 'slat-highlights' },
+    } : {}),
     profile: options.profileRef ? {
       id: options.profileRef.id ?? null,
       name: options.profileRef.name ?? null,
@@ -597,6 +607,7 @@ export function planManufacturingRepairs(mask, options) {
     } : null,
   };
   let candidate = cloneMask(mask);
+  checkedGeometry.set(candidate, checkedGeometry.get(mask));
   let validation = beforeValidation;
   const items = [];
   const notes = [];
@@ -910,11 +921,12 @@ export function planManufacturingRepairs(mask, options) {
     rejectedCandidateCount,
     rejectionReasons: [...rejectionCounts].map(([reason, count]) => ({ reason, count })),
   };
-  const effects = measureRepairEffects(mask, candidate, {
-    sheet: options.sheet,
-    beforeValidation,
-    afterValidation,
-  });
+  const effects = measureRepairEffects(checkedGeometry.get(mask)?.mask ?? mask,
+    checkedGeometry.get(candidate)?.mask ?? candidate, {
+      sheet: options.sheet,
+      beforeValidation,
+      afterValidation,
+    });
   const outcome = {
     beforeErrors,
     afterErrors,
@@ -948,6 +960,7 @@ export function planManufacturingRepairs(mask, options) {
     counts,
     supportCount,
     mask: candidate,
+    preparedGeometry: checkedGeometry.get(candidate)?.prepared ?? null,
     beforeValidation,
     afterValidation,
     validationContract,

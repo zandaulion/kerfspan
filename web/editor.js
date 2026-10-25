@@ -18,6 +18,7 @@ import {
   CANDIDATE_PAYLOAD_VERSION,
   FINISHED_BOUNDARY_CAM,
   GEOMETRY_VALIDATION_MODEL_VERSION,
+  VECTOR_SIMPLIFICATION_MODEL_VERSION,
   PROJECT_SCHEMA,
   PROJECT_VERSION,
   analyzeConnectivity,
@@ -1386,7 +1387,9 @@ function updateGeometryPreviewState() {
   if (state.repairPreviewMask && ['material', 'backlit', 'issues'].includes(state.view)) {
     container.dataset.state = 'provisional';
     label.textContent = 'Repair preview';
-    copy.textContent = 'Apply the proposed repairs, then check the updated cutting paths.';
+    copy.textContent = repairVectorPreview
+      ? 'Shows the proposed cutting paths. Apply repairs, then run all checks.'
+      : 'Apply the proposed repairs, then check the updated cutting paths.';
     return;
   }
   const legacySimulation = ['material', 'backlit'].includes(state.view) &&
@@ -1437,6 +1440,8 @@ const geometryJobs = createWorkerJobRunner({ workerUrl: '/workers/geometry.js' }
 const vectorPreviewJobs = createWorkerJobRunner({ workerUrl: '/workers/geometry.js' });
 let vectorPreview = null;
 let vectorPreviewTimer = null;
+let repairVectorPreview = null;
+let repairVectorPreviewSequence = 0;
 // Project raster encoding is intentionally isolated from validation. Large
 // panels can contain several million cells; RLE encoding them on the UI thread
 // made the brush pause shortly after every autosave-worthy gesture.
@@ -1949,6 +1954,7 @@ function finishedGeometryPreview(mask) {
 
 function invalidateValidation({ clearAnalysis = false } = {}) {
   invalidateVectorPreview();
+  repairVectorPreview = null;
   if (geometryJobs.active) geometryJobs.cancel('Geometry changed; the outdated calculation was cancelled');
   cancelManualValidationReview();
   state.revision += 1;
@@ -2242,6 +2248,7 @@ function currentValidationOptions() {
     requireSingleComponent: true,
     // Validation keeps only those still cut exactly in the mask it checks.
     exactCircleHoles: availableVectorDotHoles(),
+    vectorOptions: slatValidationVectorOptions(),
   };
 }
 
@@ -2264,6 +2271,8 @@ async function validateCurrentGeometry({ reviewAnchor = null, focusReview = fals
     return null;
   }
   if (!validation || requestedRevision !== state.revision) return null;
+  const preparedGeometry = validation.preparedGeometry;
+  delete validation.preparedGeometry;
   state.validation = validation;
   state.validationPending = false;
   state.validated = state.validation.valid;
@@ -2271,6 +2280,16 @@ async function validateCurrentGeometry({ reviewAnchor = null, focusReview = fals
   state.exportTimestamp = state.validation.valid ? new Date() : null;
   state.lastValidatedAt = new Date().toISOString();
   invalidateVectorPreview();
+  if (preparedGeometry) {
+    preparedGeometry.postFitValidation = validation;
+    preparedGeometry.report.postFitValidation = postFitValidationRecord(validation, true);
+    vectorPreview = {
+      key: vectorPreviewKey(), checked: validation.valid, prepared: preparedGeometry, failed: false,
+      pathData: vectorPreviewPathData(geometryForExport(), preparedGeometry),
+      promise: Promise.resolve(preparedGeometry),
+    };
+    updateVectorSimplificationUi(preparedGeometry.report);
+  }
   const reviewTarget = nextIssueReviewTarget(state.validation.issues ?? [], reviewAnchor);
   state.highlightedIssue = reviewTarget?.issue ?? null;
   state.highlightedIssueLocation = reviewTarget?.locationIndex ?? 0;
@@ -2527,6 +2546,9 @@ function currentRepairValidationContract({ allowanceMm = repairAllowanceMm() } =
     minimumOpeningMm,
     targetWebMm: minimumWebMm + allowanceMm,
     targetOpeningMm: minimumOpeningMm + allowanceMm,
+    ...(slatValidationVectorOptions() ? {
+      vectorProcessing: { modelVersion: VECTOR_SIMPLIFICATION_MODEL_VERSION, mode: 'slat-highlights' },
+    } : {}),
     profile: {
       id: profile.id,
       name: profile.name,
@@ -2554,6 +2576,8 @@ function repairValidationOptions(contract = currentRepairValidationContract()) {
     anchorBoundary: false,
     requireAnchored: false,
     requireSingleComponent: true,
+    exactCircleHoles: availableVectorDotHoles(),
+    vectorOptions: slatValidationVectorOptions(),
   };
 }
 
@@ -2624,6 +2648,7 @@ async function buildRepairPreview({ focus = true, mode = 'errors' } = {}) {
         minimumOpeningMm,
         geometryInterpretation: contract.geometryInterpretation,
         exactCircleHoles: availableVectorDotHoles(),
+        vectorOptions: slatValidationVectorOptions(),
         targetWebMm,
         targetOpeningMm,
         protectedMask: repairProtectedMask(mask),
@@ -2647,6 +2672,7 @@ async function buildRepairPreview({ focus = true, mode = 'errors' } = {}) {
       return false;
     }
     const candidate = proposal.mask;
+    setRepairVectorPreview(candidate, proposal.preparedGeometry);
     const plan = {
       kind: proposal.kind,
       mode,
@@ -2684,6 +2710,7 @@ async function buildRepairPreview({ focus = true, mode = 'errors' } = {}) {
     return true;
   } catch (error) {
     console.error(error);
+    repairVectorPreview = null;
     state.repairPlan = null;
     state.repairPreviewBaseMask = null;
     state.repairPreviewUsesExistingLayer = false;
@@ -2701,6 +2728,7 @@ async function buildRepairPreview({ focus = true, mode = 'errors' } = {}) {
 async function updateRepairPreviewMasks() {
   const mask = state.repairPreviewBaseMask ?? geometryForExport();
   if (!mask || !state.repairPlan) {
+    repairVectorPreview = null;
     state.repairPreviewMask = null;
     state.repairPreviewKerfMask = null;
     return;
@@ -2719,6 +2747,7 @@ async function updateRepairPreviewMasks() {
     if (!result || state.repairPlan !== plan) return;
     state.repairPreviewMask = result.candidate;
     state.repairPreviewKerfMask = result.finishedMask;
+    setRepairVectorPreview(result.candidate, result.preparedGeometry);
     const validation = result.afterValidation;
     const outcome = plan.outcome;
     outcome.afterErrors = countValidationLocations(validation, 'error');
@@ -2747,6 +2776,7 @@ async function updateRepairPreviewMasks() {
 }
 
 function discardRepairPreview() {
+  repairVectorPreview = null;
   state.repairPlan = null;
   state.repairPreviewBaseMask = null;
   state.repairPreviewUsesExistingLayer = false;
@@ -3064,6 +3094,7 @@ async function applyRepairPlan() {
   }
 
   const repairCount = state.repairPlan.items.length;
+  repairVectorPreview = null;
   const repairKind = state.repairPlan.kind;
   const repairMode = state.repairPlan.mode;
   const repairSummary = {
@@ -3271,6 +3302,25 @@ function vectorPreviewKey() {
   });
 }
 
+function slatValidationVectorOptions() {
+  const guide = availableSlatHighlights();
+  return el('export-simplify')?.checked !== true && guide?.regions.length
+    ? { simplify: false, slatHighlights: guide } : null;
+}
+
+function vectorPreviewPathData(mask, preparedGeometry) {
+  const svg = exportSvg(mask, sheet(), { preparedGeometry, includeXmlDeclaration: false });
+  return new DOMParser().parseFromString(svg, 'image/svg+xml')
+    .querySelector('[data-stencil-role="retained-material"]')?.getAttribute('d') ?? '';
+}
+
+function setRepairVectorPreview(mask, prepared) {
+  repairVectorPreview = prepared ? {
+    key: `repair-${++repairVectorPreviewSequence}`, mask, prepared, checked: false,
+    pathData: vectorPreviewPathData(mask, prepared),
+  } : null;
+}
+
 function invalidateVectorPreview() {
   clearTimeout(vectorPreviewTimer);
   vectorPreviewTimer = null;
@@ -3299,16 +3349,16 @@ function requestVectorPreview() {
     exactCircleHoles: availableVectorDotHoles(),
     options,
     validationOptions: currentValidationOptions(),
+    baselineValidation: baseline ? { valid: baseline.valid, issues: baseline.issues } : null,
   })).then(({ value: result }) => {
     if (vectorPreview !== entry || key !== vectorPreviewKey()) return null;
     entry.prepared = baseline
       ? finalizePreparedVectorGeometry(result, mask, baseline, options)
       : result.prepared;
+    entry.checked = Boolean(baseline && entry.prepared.postFitValidation?.valid);
     // Use the SVG writer itself, including its precision and circle commands.
     // SVG/DXF exports reuse entry.prepared rather than fitting a second time.
-    const svg = exportSvg(mask, panel, { preparedGeometry: entry.prepared, includeXmlDeclaration: false });
-    entry.pathData = new DOMParser().parseFromString(svg, 'image/svg+xml')
-      .querySelector('[data-stencil-role="retained-material"]')?.getAttribute('d') ?? '';
+    entry.pathData = vectorPreviewPathData(mask, entry.prepared);
     if (entry.checked) updateVectorSimplificationUi(entry.prepared.report);
     draw();
     return entry.prepared;
@@ -3323,17 +3373,17 @@ function requestVectorPreview() {
   return entry.promise;
 }
 
-function drawVectorCutPreview(layer, mask, visible) {
+function drawVectorCutPreview(layer, mask, visible, repairEntry = null) {
   if (!layer) return false;
   if (!visible) {
     layer.setAttribute('hidden', '');
     return false;
   }
-  const key = vectorPreviewKey();
-  const entry = vectorPreview?.key === key ? vectorPreview : null;
+  const key = repairEntry?.key ?? vectorPreviewKey();
+  const entry = repairEntry ?? (vectorPreview?.key === key ? vectorPreview : null);
   if (!entry?.prepared) {
     layer.setAttribute('hidden', '');
-    if (!entry && vectorPreviewTimer === null) {
+    if (!repairEntry && !entry && vectorPreviewTimer === null) {
       vectorPreviewTimer = setTimeout(() => void requestVectorPreview(), 180);
     }
     return false;
@@ -3358,6 +3408,7 @@ function drawVectorCutPreview(layer, mask, visible) {
   layer.querySelector('rect').setAttribute('fill', backlit ? '#fff1be' : '#f5f4f0');
   layer.querySelector('path').setAttribute('fill', backlit ? '#141c21' : '#2a2e34');
   layer.dataset.checked = String(entry.checked);
+  layer.dataset.repairPreview = String(Boolean(repairEntry));
   layer.dataset.vertices = String(entry.prepared.report.outputVertexCount);
   layer.removeAttribute('hidden');
   return true;
@@ -3471,8 +3522,9 @@ function draw() {
     toMm(numberField('kerf', 1.2)), state.geometryInterpretation,
   ) > 0);
   const cutPathsVisible = drawVectorCutPreview(cutLayer, mask,
-    !repairPreviewVisible && !state.touchupLive && !legacySimulation &&
-    ['material', 'backlit', 'issues'].includes(state.view));
+    (!repairPreviewVisible || repairVectorPreview?.mask === state.repairPreviewMask) &&
+    !state.touchupLive && !legacySimulation && ['material', 'backlit', 'issues'].includes(state.view),
+    repairPreviewVisible ? repairVectorPreview : null);
   if (cutPathsVisible && stage) stage.dataset.cutPreview = 'vector';
   drawVectorDotPreview(vectorLayer, mask, {
     visible: !cutPathsVisible && !repairPreviewVisible && ['source', 'material', 'backlit'].includes(state.view),
@@ -7994,7 +8046,7 @@ function finalizePreparedVectorGeometry(result, mask, baselineValidation, option
         postFitValidation: postFitValidationRecord(postFitValidation),
       },
     };
-    postFitValidation = baselineValidation;
+    postFitValidation = result.fallbackValidation ?? baselineValidation;
   } else {
     prepared.report = {
       ...prepared.report,
@@ -8034,6 +8086,10 @@ async function exportGeometry(kind) {
       ? await prepareGeometryForVectorExport(requestedRevision)
       : null;
     if (vectorExport && !preparedGeometry) return;
+    if (vectorExport && preparedGeometry.postFitValidation?.valid !== true) {
+      toast('The prepared cutting paths do not pass the geometry checks. Run all checks before exporting.');
+      return;
+    }
     let blob;
     let filename;
     if (kind === 'svg') {
@@ -9296,7 +9352,8 @@ function wire() {
   });
   el('export-units')?.addEventListener('change', updateReadouts);
   el('export-simplify')?.addEventListener('change', () => {
-    invalidateVectorPreview();
+    if (selectedCutStyle() === 'lamele' && availableSlatHighlights()?.regions.length) invalidateValidation();
+    else invalidateVectorPreview();
     updateVectorSimplificationUi();
     draw();
     markDirty();

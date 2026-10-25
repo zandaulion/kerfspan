@@ -8,8 +8,9 @@ import {
 } from "./repairs.js";
 import { suggestKerfAwareBridges } from "./suggestions.js";
 import { validateDesign } from "./validation.js";
-import { prepareVectorGeometry } from "./vector-geometry.js";
+import { prepareVectorGeometry, vectorManufacturingValidationRegressed } from "./vector-geometry.js";
 import { materializeBridgeStrategy } from "./feature-guidance.js";
+import { validateManufacturingGeometry } from "./manufacturing-geometry.js";
 import { encodeMask } from "./project.js";
 
 function geometryOnlyStrategy(strategy) {
@@ -80,11 +81,19 @@ export function executeGeometryJob(type, payload, report = () => {}) {
       report("checking", "Rasterizing the actual vector output and rechecking manufacturing constraints…");
       postFitValidation = validateDesign(prepared.rasterMask, payload.validationOptions);
     }
-    return { prepared, changesRasterResult, postFitValidation };
+    // A Slats baseline may already describe fitted paths. If a later fit is
+    // rejected, independently check the raw fallback before releasing it.
+    const fallbackValidation = prepared.report.mode === 'slat-highlights' && changesRasterResult &&
+      payload.baselineValidation && vectorManufacturingValidationRegressed(payload.baselineValidation, postFitValidation)
+      ? validateDesign(payload.mask, payload.validationOptions) : null;
+    return { prepared, changesRasterResult, postFitValidation, fallbackValidation };
   }
   if (type === "validate") {
     report("checking", "Checking connectivity, openings, and finished metal widths…");
-    return validateDesign(payload.mask, payload.options, report);
+    const checked = validateManufacturingGeometry(payload.mask, payload.options, report);
+    return checked.prepared
+      ? { ...checked.validation, preparedGeometry: checked.prepared }
+      : checked.validation;
   }
   if (type === "repair") {
     report("planning", "Testing local corrections against the complete blocker set…");
@@ -94,20 +103,23 @@ export function executeGeometryJob(type, payload, report = () => {}) {
     });
     return {
       proposal,
-      finishedMask: finishedPreview(proposal.mask, payload.options),
+      finishedMask: finishedPreview(proposal.preparedGeometry?.rasterMask ?? proposal.mask, payload.options),
     };
   }
   if (type === "repair-evaluate") {
     report("checking", "Rechecking the selected repair choices against every blocker…");
     const candidate = applySmallOpeningRepairPlan(payload.mask, payload.plan);
-    const beforeValidation = validateDesign(payload.mask, payload.options);
-    const afterValidation = validateDesign(candidate, payload.options);
+    const before = validateManufacturingGeometry(payload.mask, payload.options);
+    const after = validateManufacturingGeometry(candidate, payload.options);
+    const beforeValidation = before.validation;
+    const afterValidation = after.validation;
     return {
       candidate,
-      finishedMask: finishedPreview(candidate, payload.options),
+      preparedGeometry: after.prepared,
+      finishedMask: finishedPreview(after.mask, payload.options),
       beforeValidation,
       afterValidation,
-      effects: measureRepairEffects(payload.mask, candidate, {
+      effects: measureRepairEffects(before.mask, after.mask, {
         sheet: payload.options.sheet,
         beforeValidation,
         afterValidation,

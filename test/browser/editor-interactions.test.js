@@ -350,6 +350,86 @@ function mixedHighlightProject() {
   return JSON.stringify(project);
 }
 
+function repairHighlightProject() {
+  const project = JSON.parse(mixedHighlightProject());
+  const { mask } = mixedSlatFixture();
+  // A real undersized opening in the frame, away from the light/shadow detail.
+  mask.data[4 * mask.width + 4] = 0;
+  project.raster = { sourceMask: encodeMask(mask), baseMask: encodeMask(mask) };
+  return JSON.stringify(project);
+}
+
+test('regenerating a no-change Slats repair preview keeps the same straight paths and blocker count', async () => {
+  const fixture = await openEditor({ projectText: repairHighlightProject() });
+  const { page } = fixture;
+  try {
+    const layer = page.locator('#vector-cut-layer');
+    await layer.locator('path').waitFor();
+    await page.getByRole('tab', { name: /Validate/ }).click();
+    await page.locator('#btn-validate').click();
+    await page.waitForFunction(() => document.querySelector('#filter-count-error').textContent === '1');
+    const before = await layer.locator('path').getAttribute('d');
+    const vertices = await layer.getAttribute('data-vertices');
+    await page.locator('#repair-category-slivers').uncheck();
+    await page.locator('#repair-category-webs').uncheck();
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const previousKey = await layer.getAttribute('data-key');
+      await page.locator('#btn-preview-repairs').click();
+      await page.waitForFunction((key) => {
+        const layer = document.querySelector('#vector-cut-layer');
+        return layer.dataset.repairPreview === 'true' && layer.dataset.key !== key && !layer.hasAttribute('hidden');
+      }, previousKey);
+      assert.equal(await layer.locator('path').getAttribute('d'), before);
+      assert.equal(await layer.getAttribute('data-vertices'), vertices);
+      assert.equal(await page.locator('#editor-canvas').evaluate((canvas) => getComputedStyle(canvas).visibility), 'hidden');
+      assert.equal(await page.locator('#repair-before-errors').textContent(), '1');
+      assert.equal(await page.locator('#repair-after-errors').textContent(), '1');
+      assert.equal(await page.locator('#btn-apply-repairs').isDisabled(), true);
+    }
+    await page.getByRole('button', { name: 'Back-lit', exact: true }).click();
+    assert.equal(await layer.locator('path').getAttribute('d'), before);
+    assert.equal(await page.locator('#geometry-preview-state-label').textContent(), 'Repair preview');
+    await page.locator('#btn-discard-repairs').click();
+    assert.equal(await layer.locator('path').getAttribute('d'), before);
+    assert.equal(await layer.getAttribute('data-repair-preview'), 'false');
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('applied Slats repairs export exactly the straight paths shown in their preview', async () => {
+  const fixture = await openEditor({ projectText: repairHighlightProject() });
+  const { page } = fixture;
+  try {
+    await page.getByRole('tab', { name: /Validate/ }).click();
+    await page.locator('#btn-validate').click();
+    await page.waitForFunction(() => document.querySelector('#filter-count-error').textContent === '1');
+    await page.locator('#btn-preview-repairs').click();
+    const layer = page.locator('#vector-cut-layer[data-repair-preview="true"]:not([hidden])');
+    await layer.waitFor();
+    const preview = await layer.locator('path').getAttribute('d');
+    assert.equal(await page.locator('#repair-after-errors').textContent(), '0');
+    assert.equal(await page.locator('#btn-apply-repairs').isEnabled(), true);
+    await page.locator('#btn-apply-repairs').click();
+    const accepted = page.locator('#vector-cut-layer[data-checked="true"][data-repair-preview="false"]:not([hidden])');
+    await accepted.waitFor();
+    assert.equal(await accepted.locator('path').getAttribute('d'), preview);
+    await page.getByRole('tab', { name: /Export/ }).click();
+    const downloaded = page.waitForEvent('download');
+    await page.locator('#btn-export-svg').click();
+    const svg = fs.readFileSync(await (await downloaded).path(), 'utf8');
+    const exported = await page.evaluate((xml) => new DOMParser().parseFromString(xml, 'image/svg+xml')
+      .querySelector('[data-stencil-role="retained-material"]').getAttribute('d'), svg);
+    assert.equal(exported, preview);
+    await page.locator('#export-simplify').check();
+    await page.locator('#vector-cut-layer[data-checked="false"]:not([hidden])').waitFor();
+    assert.equal(await page.locator('#btn-export-svg').isDisabled(), true,
+      'switching from fitted Slats to whole-artwork simplification must invalidate its geometry checks');
+  } finally {
+    await fixture.close();
+  }
+});
+
 test('Slats straighten only the light runs and retain the same detailed paths after candidate restoration', async () => {
   const fixture = await openEditor({ projectText: mixedHighlightProject() });
   const { page } = fixture;

@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import { FINISHED_BOUNDARY_CAM } from '../../web/core/geometry-contract.js';
 import { executeGeometryJob } from '../../web/core/geometry-jobs.js';
-import { maskFromAscii } from './fixtures.js';
+import { prepareVectorGeometry } from '../../web/core/vector-geometry.js';
+import { countValidationLocations, validateDesign } from '../../web/core/validation.js';
+import { maskFromAscii, mixedSlatFixture } from './fixtures.js';
 
 const validationOptions = {
   sheet: { widthMm: 5, heightMm: 5 },
@@ -135,6 +137,67 @@ test('repair evaluation keeps its candidate and measurements cloneable', () => {
   assert.equal(result.candidate.data[7], 1);
   assert.ok(result.effects.addedAreaMm2 > 0);
   assert.doesNotThrow(() => structuredClone(result));
+});
+
+test('Slats validation and an unchanged repair plan check the displayed straight paths', () => {
+  const { mask, sheet, placed } = mixedSlatFixture();
+  const vectorOptions = { simplify: false, slatHighlights: placed };
+  const options = { ...validationOptions, sheet, minimumWebMm: 3, minimumOpeningMm: 2, vectorOptions };
+  const original = Uint8Array.from(mask.data);
+  const prepared = prepareVectorGeometry(mask, sheet, [], vectorOptions);
+  const expected = validateDesign(prepared.rasterMask, options);
+  const checked = executeGeometryJob('validate', { mask, options });
+  const { preparedGeometry, ...validation } = checked;
+  assert.deepEqual(validation, expected);
+  assert.deepEqual(preparedGeometry.contours, prepared.contours);
+  assert.notEqual(countValidationLocations(expected, 'warning'),
+    countValidationLocations(validateDesign(mask, options), 'warning'), 'fixture must expose the raster/vector mismatch');
+
+  const { proposal, finishedMask } = executeGeometryJob('repair', { mask, options: {
+    ...options, strategy: 'balanced', categories: { slivers: false, gaps: false, webs: false },
+    targetWebMm: 3.4, targetOpeningMm: 2.4, bridgeWidthMm: 4,
+  } });
+  assert.equal(proposal.items.length, 0);
+  assert.deepEqual(proposal.beforeValidation, expected);
+  assert.deepEqual(proposal.afterValidation, expected);
+  assert.deepEqual(proposal.preparedGeometry.contours, prepared.contours);
+  assert.deepEqual(finishedMask.data, prepared.rasterMask.data);
+  assert.deepEqual(proposal.mask.data, original, 'fitting must not be baked into editable repair pixels');
+  assert.deepEqual(mask.data, original);
+  assert.equal(proposal.outcome.effects.changedCells, 0);
+  assert.equal(proposal.validationContract.vectorProcessing.mode, 'slat-highlights');
+  assert.doesNotThrow(() => structuredClone(proposal));
+});
+
+test('Slats repair overrides recheck the fitted candidate while retaining real opening errors', () => {
+  const { mask, sheet, placed } = mixedSlatFixture();
+  const pinhole = 4 * mask.width + 4;
+  mask.data[pinhole] = 0;
+  const options = { ...validationOptions, sheet, minimumWebMm: 2, minimumOpeningMm: 2,
+    vectorOptions: { simplify: false, slatHighlights: placed } };
+  const plan = { items: [{ action: 'close', edits: { close: { keep: [pinhole], remove: [] } } }] };
+  const result = executeGeometryJob('repair-evaluate', { mask, plan, options });
+  assert.equal(countValidationLocations(result.beforeValidation, 'error'), 1);
+  assert.equal(result.beforeValidation.errors[0].code, 'MIN_OPENING_UNCUTTABLE');
+  assert.equal(countValidationLocations(result.afterValidation, 'error'), 0);
+  const expected = prepareVectorGeometry(result.candidate, sheet, [], options.vectorOptions);
+  assert.deepEqual(result.preparedGeometry.contours, expected.contours);
+  assert.deepEqual(result.afterValidation, validateDesign(expected.rasterMask, options));
+  assert.deepEqual(result.finishedMask.data, expected.rasterMask.data);
+  assert.equal(mask.data[pinhole], 0, 'preview changes must not alter the active design');
+  assert.equal(result.candidate.data[pinhole], 1);
+});
+
+test('a rejected Slats fit checks its raster fallback independently of the fitted baseline', () => {
+  const { mask, sheet, placed } = mixedSlatFixture();
+  const options = { ...validationOptions, sheet, minimumWebMm: 10, minimumOpeningMm: 2 };
+  const result = executeGeometryJob('vector-prepare', {
+    mask, sheet, options: { simplify: false, slatHighlights: placed },
+    validationOptions: options, baselineValidation: { valid: true, issues: [] },
+  });
+  assert.equal(result.postFitValidation.valid, false);
+  assert.deepEqual(result.fallbackValidation, validateDesign(mask, options));
+  assert.equal(result.fallbackValidation.valid, false, 'an approved fitted baseline cannot approve a failing raw fallback');
 });
 
 test('unknown background jobs fail closed', () => {

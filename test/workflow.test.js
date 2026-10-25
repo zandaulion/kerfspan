@@ -390,7 +390,7 @@ test('manufacturing errors offer a combined reversible preview with per-occurren
   assert.match(editor, /maximumBridges: 192/);
   assert.match(editor, /profileRef: contract\.profile/);
   assert.match(editor, /repairContractMatchesCurrent\(state\.repairPlan\.validationContract\)/);
-  assert.match(geometryJobsCore, /measureRepairEffects\(payload\.mask, candidate/);
+  assert.match(geometryJobsCore, /measureRepairEffects\(before\.mask, after\.mask/);
   assert.match(editor, /describeRepairTermination\(/);
   assert.match(editor, /state\.repairPlan = plan;[\s\S]*?No automatic changes were kept/);
   assert.match(editor, /if \(mode === 'warnings'\)/);
@@ -638,7 +638,7 @@ test('long geometry work is cancellable, measured, and protected from stale resu
   assert.match(geometryWorker, /self\.onmessage/);
   assert.match(geometryWorker, /kind: "result"/);
   assert.match(geometryWorker, /collectTransferableBuffers\(result\)/);
-  assert.match(geometryJobsCore, /validateDesign\(payload\.mask, payload\.options, report\)/);
+  assert.match(geometryJobsCore, /validateManufacturingGeometry\(payload\.mask, payload\.options, report\)/);
 });
 
 test('a new editor opens on an unlinked 1250 by 2500 mm panel', () => {
