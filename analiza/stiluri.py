@@ -959,8 +959,8 @@ def lamele(
     ``unghi`` is measured from the image's horizontal axis. The legacy
     ``orizontal`` switch remains as an API compatibility fallback when no
     angle is supplied: horizontal is 0 degrees and vertical is 90 degrees.
-    The tone field is turned into bar coordinates, rendered there with the
-    physical pitch/web limits, then mapped back without rotating the portrait.
+    The tone field is sampled in bar coordinates. Diagonal edges are evaluated
+    directly on the source grid, avoiding a second rasterization of the bars.
     """
     if pas_mm < punte_min_mm + fanta_min_mm:
         raise ReglajImposibil(
@@ -974,8 +974,7 @@ def lamele(
     if not np.isfinite(unghi) or not -90.0 <= unghi <= 90.0:
         raise ReglajImposibil("The slat angle must be between -90 and 90 degrees.")
 
-    # Preserve the exact old horizontal/vertical paths. Apart from being
-    # faster, this keeps existing project output bit-for-bit stable.
+    # Horizontal/vertical bars need no coordinate transform.
     intoarcere = None
     if abs(abs(unghi) - 90.0) < 1e-9:
         lucru = camp
@@ -1010,7 +1009,7 @@ def lamele(
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=0.0,
         )
-        intoarcere = (cv2.invertAffineTransform(matrice), latime_sursa, inaltime_sursa)
+        intoarcere = matrice
     inaltime, latime = lucru.shape
 
     pas = pas_mm / mm_pe_px
@@ -1024,6 +1023,8 @@ def lamele(
     numar = max(1, int(latime // pas))
     margine = (latime - numar * pas) / 2
     masca = np.zeros((inaltime, latime), np.uint8)
+    diagonala = isinstance(intoarcere, np.ndarray)
+    profile = np.empty((numar, inaltime), np.float32) if diagonala else None
 
     for indice in range(numar):
         centru = margine + (indice + 0.5) * pas
@@ -1033,6 +1034,9 @@ def lamele(
             continue
         cerneala = lucru[:, st:dr].mean(axis=1)
         latimi = punte_min + np.power(cerneala, gamma) * (punte_max - punte_min)
+        if diagonala:
+            profile[indice] = latimi
+            continue
         de_la = np.round(centru - latimi / 2)[:, None]
         pana_la = np.round(centru + latimi / 2)[:, None]
 
@@ -1047,16 +1051,27 @@ def lamele(
         fereastra = np.arange(fs, fd)[None, :]
         masca[:, fs:fd] |= ((fereastra >= de_la) & (fereastra < pana_la)).astype(np.uint8)
 
+    if diagonala:
+        # Test source pixel centres against continuous bar edges. Rotating a
+        # rounded binary bar instead makes its two pixel grids beat against
+        # each other, adding periodic teeth even when the tone is constant.
+        # Interpolate widths along each bar so shading has no one-row jumps.
+        rezultat = np.zeros(camp.shape, dtype=bool)
+        x = np.arange(camp.shape[1], dtype=np.float64) + 0.5
+        for y in range(camp.shape[0]):
+            transversal = matrice[0, 0] * x + matrice[0, 1] * (y + 0.5) + matrice[0, 2]
+            longitudinal = matrice[1, 0] * x + matrice[1, 1] * (y + 0.5) + matrice[1, 2]
+            bare = np.clip(np.floor((transversal - margine) / pas).astype(int), 0, numar - 1)
+            pozitie = np.clip(longitudinal - 0.5, 0, inaltime - 1)
+            jos = np.floor(pozitie).astype(int)
+            sus = np.minimum(jos + 1, inaltime - 1)
+            fractie = pozitie - jos
+            latimi = profile[bare, jos] * (1 - fractie) + profile[bare, sus] * fractie
+            centre = margine + (bare + 0.5) * pas
+            rezultat[y] = np.abs(transversal - centre) < latimi / 2
+        return rezultat
     if intoarcere == "transpose":
         return masca.T.astype(bool)
-    if intoarcere is not None:
-        inversa, latime_sursa, inaltime_sursa = intoarcere
-        return cv2.warpAffine(
-            masca, inversa, (latime_sursa, inaltime_sursa),
-            flags=cv2.INTER_NEAREST,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=0,
-        ).astype(bool)
     return masca.astype(bool)
 
 

@@ -197,6 +197,39 @@ class TestLamele(unittest.TestCase):
         with self.assertRaises(ReglajImposibil):
             lamele(camp_uniform(100, 100, 0.5), MM_PE_PX, unghi=91)
 
+    def test_diagonal_highlights_follow_straight_analytical_edges(self):
+        # A white image must produce constant-width straight bars, with only
+        # the unavoidable pixel coverage of a single rasterization. In
+        # particular, rotating already rounded bars must not add teeth.
+        height, width = 173, 239
+        pitch = 13.7 / MM_PE_PX
+        web = 2.3 / MM_PE_PX
+        yy, xx = np.mgrid[:height, :width]
+        for angle in (-75, -55, -30, 25, 55, 80):
+            with self.subTest(angle=angle):
+                sine, cosine = np.sin(np.radians(angle)), np.cos(np.radians(angle))
+                corners = np.array([[0, 0], [width, 0], [0, height], [width, height]])
+                across_corners = -sine * corners[:, 0] + cosine * corners[:, 1]
+                low = np.floor(across_corners.min())
+                across_size = np.ceil(across_corners.max()) - low
+                count = max(1, int(across_size // pitch))
+                margin = (across_size - count * pitch) / 2
+                across = -sine * (xx + 0.5) + cosine * (yy + 0.5) - low
+                bar = np.clip(np.floor((across - margin) / pitch), 0, count - 1)
+                expected = np.abs(across - (margin + (bar + 0.5) * pitch)) < web / 2
+                actual = lamele(camp_uniform(height, width, 0), MM_PE_PX,
+                                pas_mm=13.7, punte_min_mm=2.3, fanta_min_mm=3,
+                                unghi=angle)
+                np.testing.assert_array_equal(actual, expected)
+
+    def test_diagonal_dark_tone_still_widens_bars(self):
+        light = lamele(camp_uniform(200, 240, 0), MM_PE_PX,
+                       pas_mm=13.7, punte_min_mm=2.3, fanta_min_mm=3, unghi=-55)
+        dark = lamele(camp_uniform(200, 240, 1), MM_PE_PX,
+                      pas_mm=13.7, punte_min_mm=2.3, fanta_min_mm=3, unghi=-55)
+        self.assertTrue(np.all(dark[light]), "darkening must preserve the minimum web")
+        self.assertGreater(dark.sum(), light.sum() * 2)
+
 
 class TestRezolutie(unittest.TestCase):
     def test_o_limita_sub_un_pixel_e_refuzata(self):
