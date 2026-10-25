@@ -8767,8 +8767,9 @@ function wire() {
 
   el('file-input')?.addEventListener('change', (event) => importFile(event.target.files?.[0]));
   el('btn-empty-import')?.addEventListener('click', () => {
+    setStage('prepare');
     if (mobileWorkspaceActive()) openMobileSheet('controls');
-    requestAnimationFrame(() => el('file-input')?.click());
+    el('file-input')?.click();
   });
   const zone = el('drop-zone');
   zone?.addEventListener('dragover', (event) => { event.preventDefault(); zone.dataset.dragging = 'true'; });
@@ -9713,6 +9714,9 @@ function wire() {
   };
 
   viewport?.addEventListener('pointerdown', (event) => {
+    // Controls over the preview must keep their native click and focus behavior.
+    // Capturing their pointer for panning redirects the click to the viewport.
+    if (event.target.closest('button, input, select, textarea, a, label, [contenteditable]')) return;
     if (event.isPrimary === false || activeCanvasPointerId !== null
       || (event.pointerType === 'mouse' && event.button !== 0)) return;
     viewport.focus({ preventScroll: true });

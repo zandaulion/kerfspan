@@ -148,7 +148,7 @@ function syntheticProject() {
   }));
 }
 
-async function openEditor({ viewport = { width: 1280, height: 900 } } = {}) {
+async function openEditor({ viewport = { width: 1280, height: 900 }, importProject = true } = {}) {
   const invite = auth.createInvite('Browser interaction test');
   const context = await browser.newContext({ viewport, serviceWorkers: 'block', acceptDownloads: true });
   const page = await context.newPage();
@@ -171,18 +171,20 @@ async function openEditor({ viewport = { width: 1280, height: 900 } } = {}) {
   await page.getByRole('button', { name: 'Open Kerfspan' }).click();
   await page.locator('#app-main').waitFor({ state: 'visible' });
   await page.waitForFunction(() => typeof window.stencilCncIsBusy === 'function');
-  await page.locator('#file-input').setInputFiles({
-    name: 'synthetic.stencil.json',
-    mimeType: 'application/json',
-    buffer: Buffer.from(syntheticProject()),
-  });
-  await page.locator('[data-candidate-id="candidate-browser"]').waitFor({ state: 'attached', timeout: 10_000 }).catch(async (error) => {
-    const status = await page.locator('#app-status').textContent().catch(() => 'missing status');
-    const notices = await page.locator('.toast').allTextContents().catch(() => []);
-    const candidates = await page.locator('#candidate-list').textContent().catch(() => 'missing candidates');
-    error.message += `\nApp status: ${status}\nNotices: ${notices.join(' | ')}\nCandidates: ${candidates}\nBrowser errors: ${browserErrors.join(' | ')}`;
-    throw error;
-  });
+  if (importProject) {
+    await page.locator('#file-input').setInputFiles({
+      name: 'synthetic.stencil.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(syntheticProject()),
+    });
+    await page.locator('[data-candidate-id="candidate-browser"]').waitFor({ state: 'attached', timeout: 10_000 }).catch(async (error) => {
+      const status = await page.locator('#app-status').textContent().catch(() => 'missing status');
+      const notices = await page.locator('.toast').allTextContents().catch(() => []);
+      const candidates = await page.locator('#candidate-list').textContent().catch(() => 'missing candidates');
+      error.message += `\nApp status: ${status}\nNotices: ${notices.join(' | ')}\nCandidates: ${candidates}\nBrowser errors: ${browserErrors.join(' | ')}`;
+      throw error;
+    });
+  }
   return {
     context,
     page,
@@ -192,6 +194,42 @@ async function openEditor({ viewport = { width: 1280, height: 900 } } = {}) {
       await context.close();
     },
   };
+}
+
+for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  test(`empty-state import opens the file picker at ${viewport.width}px`, async () => {
+    const fixture = await openEditor({ viewport, importProject: false });
+    try {
+      await fixture.page.route('**/api/analizeaza', (route) => route.fulfill({
+        json: { sourceMask: encodeMask(patternedMask(96, 68)), info: { material: 0.5 } },
+      }));
+      const imageData = await fixture.page.evaluate(() => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 96;
+        canvas.height = 68;
+        const context = canvas.getContext('2d');
+        context.fillStyle = 'white';
+        context.fillRect(0, 0, 96, 68);
+        context.fillStyle = 'black';
+        context.fillRect(24, 16, 48, 36);
+        return canvas.toDataURL('image/png').split(',')[1];
+      });
+      const chooserPromise = fixture.page.waitForEvent('filechooser', { timeout: 3_000 });
+      await fixture.page.getByRole('button', { name: 'Choose an image', exact: true }).click();
+      const chooser = await chooserPromise;
+      assert.equal(await chooser.element().getAttribute('id'), 'file-input');
+      await chooser.setFiles({
+        name: 'synthetic.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from(imageData, 'base64'),
+      });
+      await fixture.page.waitForFunction(() => document.querySelector('#source-name').textContent === 'synthetic.png');
+      await fixture.page.locator('#empty-state').waitFor({ state: 'hidden' });
+      assert.match(await fixture.page.locator('#source-meta').textContent(), /96 × 68/);
+    } finally {
+      await fixture.close();
+    }
+  });
 }
 
 async function canvasChecksum(page) {
