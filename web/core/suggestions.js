@@ -292,6 +292,16 @@ export function suggestSlatStabilizers(mask, config) {
   ));
   const maximumNeighbourGapMm = config.slatPitchMm * 1.35;
   const sampleStepMm = Math.max(0.1, Math.min(pixel.x, pixel.y) * 0.55);
+  // Overall artwork bounds do not describe the tips of individual slats.
+  // Reserve room along each attachment so a rung braces the slat interior
+  // instead of creating a tiny cut-out at a tapered or shortened end.
+  const endClearanceMm = Math.min(
+    Math.max(config.widthMm * 2, config.slatPitchMm * 0.5),
+    config.maximumUnsupportedSpanMm * 0.25,
+  );
+  const hasEndClearance = (gap) => slatAttachmentClearance(
+    gap, mask, config.sheet, pixel, along, endClearanceMm,
+  );
   const bridges = [];
 
   for (let stationIndex = 0; stationIndex < stationCount; stationIndex += 1) {
@@ -312,7 +322,7 @@ export function suggestSlatStabilizers(mask, config) {
         extent.maximumAcross,
         sampleStepMm,
         maximumNeighbourGapMm,
-      );
+      ).filter(hasEndClearance);
       let selected = staggeredGaps(gaps, stationIndex % 2);
       if (!selected.length && gaps.length) {
         selected = [gaps.reduce((best, gap) =>
@@ -356,6 +366,7 @@ export function suggestSlatStabilizers(mask, config) {
         organicVariation,
         config.detailAt,
         config.featureAt,
+        hasEndClearance,
       );
       const visualMetrics = bridgeVisualMetrics(organicGap, config.detailAt, config.featureAt);
       const actualStation = projectedMidpoint(organicGap, along);
@@ -401,7 +412,7 @@ export function suggestSlatStabilizers(mask, config) {
 }
 
 function skewOrganicGap(gap, mask, sheet, pixel, along, across, stationIndex,
-  slatPitchMm, maximumSpanMm, organicVariation, detailAt, featureAt) {
+  slatPitchMm, maximumSpanMm, organicVariation, detailAt, featureAt, hasEndClearance) {
   if (organicVariation <= 0) return gap;
   const band = Math.round(projectedMidpoint(gap, across) / Math.max(slatPitchMm, Number.EPSILON));
   const maximumSkew = Math.min(slatPitchMm * 0.18, maximumSpanMm * 0.06) * organicVariation;
@@ -424,10 +435,28 @@ function skewOrganicGap(gap, mask, sheet, pixel, along, across, stationIndex,
       candidate,
       score: bridgeVisualPenalty(candidate, detailAt, featureAt) + preferenceCost,
     };
-  });
+  }).filter(({ candidate }) => !hasEndClearance || hasEndClearance(candidate));
   candidates.sort((first, second) => first.score - second.score ||
     Math.abs(first.candidate.organicSkewMm) - Math.abs(second.candidate.organicSkewMm));
   return candidates[0]?.candidate ?? gap;
+}
+
+function slatAttachmentClearance(gap, mask, sheet, pixel, along, clearanceMm) {
+  const steps = Math.max(1, Math.ceil(clearanceMm / (Math.min(pixel.x, pixel.y) * 0.5)));
+  for (const endpoint of [gap.start, gap.end]) {
+    for (const direction of [-1, 1]) {
+      for (let step = 1; step <= steps; step += 1) {
+        const distance = direction * clearanceMm * step / steps;
+        const x = endpoint.x + along.x * distance;
+        const y = endpoint.y + along.y * distance;
+        if (x < 0 || y < 0 || x >= sheet.widthMm || y >= sheet.heightMm ||
+            mask.data[Math.floor(y / pixel.y) * mask.width + Math.floor(x / pixel.x)] !== 1) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
 }
 
 function shiftedRetainedPoint(point, shiftMm, along, mask, sheet, pixel) {

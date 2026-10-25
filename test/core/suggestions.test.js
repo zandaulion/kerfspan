@@ -515,6 +515,42 @@ test("feature-aware slats add a second sparse station rather than crossing a bri
   }
 });
 
+test("slat stabilizers stay inside individual slat ends rather than following the global extent", () => {
+  const mask = createMask(41, 41);
+  const anchorMask = createMask(41, 41);
+  for (const x of [3, 11, 19, 27, 35]) {
+    const first = x === 19 ? 8 : 0;
+    const last = x === 19 ? 32 : 40;
+    for (let y = first; y <= last; y += 1) mask.data[y * mask.width + x] = 1;
+  }
+  for (let x = 0; x < mask.width; x += 1) {
+    mask.data[x] = mask.data[40 * mask.width + x] = 1;
+    anchorMask.data[x] = anchorMask.data[40 * mask.width + x] = 1;
+    // Join the shorter slat at its centre so this tests bracing, not connectivity.
+    mask.data[20 * mask.width + x] = 1;
+  }
+  const suggestions = suggestBridges(mask, {
+    sheet: { widthMm: 41, heightMm: 41 }, anchorMask,
+    widthMm: 2, minimumWebMm: 1, kerfMm: 0, requireSingleComponent: true,
+    strategy: {
+      mode: "smart", kind: "lamele", level: 2, preferredAngleDeg: 0,
+      barAngleDeg: 90, slatPitchMm: 8, maximumUnsupportedSpanMm: 10,
+      organicVariation: 1,
+    },
+  });
+  const attachments = suggestions.filter((bridge) => bridge.stabilizer)
+    .flatMap((bridge) => [bridge.start, bridge.end])
+    .filter((point) => point.x === 19.5);
+  assert.ok(attachments.length > 0, "the shorter slat should still receive interior braces");
+  assert.ok(attachments.every((point) => point.y >= 10.5 && point.y <= 30.5),
+    "bridge attachments need clearance from both local tips");
+  const positions = [8.5, ...attachments.map((point) => point.y), 32.5].sort((a, b) => a - b);
+  for (let index = 1; index < positions.length; index += 1) {
+    assert.ok(positions[index] - positions[index - 1] <= 10,
+      "interior placement must still brace the shorter slat at its target span");
+  }
+});
+
 test("organic slat stabilizers vary independently without exceeding the span target", () => {
   const mask = createMask(31, 31);
   const anchorMask = createMask(31, 31);
