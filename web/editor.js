@@ -1078,6 +1078,9 @@ function styleParams(stil = selectedCutStyle()) {
   } else if (stil === 'lamele') {
     form.set('pas_mm', String(toMm(numberField('style-pitch', 38))));
     form.set('unghi_lamele', String(numberField('style-slat-angle', -55)));
+    if (el('style-slat-light-width')?.value !== '') {
+      form.set('latime_lumina_lamele_mm', String(toMm(numberField('style-slat-light-width', 3))));
+    }
   } else if (stil === 'hasura') {
     form.set('unghi', String(numberField('style-angle', 30)));
     form.set('pas_rand_mm', String(toMm(numberField('style-row-pitch', 9))));
@@ -1297,8 +1300,12 @@ function updateStyleGuidance() {
   el('style-guidance-values').textContent = values.length
     ? `Suggested: ${values.join(' · ')}`
     : 'No dimensional preset is needed for this style; its creative controls remain unchanged.';
+  const lightWidthOverride = recommendation.style === 'lamele' && el('style-slat-light-width')?.value !== '';
+  const floorReason = lightWidthOverride
+    ? `Light-area bars use ${recommendationValue(toMm(numberField('style-slat-light-width', 3)))}; Validate still checks the ${recommendationValue(toMm(numberField('min-web', 3)))} minimum finished metal.`
+    : `The pattern floor preserves at least ${recommendationValue(recommendation.openingMm)} openings and ${recommendationValue(toMm(numberField('min-web', 3)))} finished metal.`;
   el('style-guidance-reason').textContent = values.length
-    ? `Scaled from the panel and the ${profileState} “${state.cuttingProfile.name}” profile. The pattern floor preserves at least ${recommendationValue(recommendation.openingMm)} openings and ${recommendationValue(toMm(numberField('min-web', 3)))} finished metal.`
+    ? `Scaled from the panel and the ${profileState} “${state.cuttingProfile.name}” profile. ${floorReason}`
     : `The ${profileState} “${state.cuttingProfile.name}” profile still governs validation and any later supports.`;
 
   const button = el('btn-apply-style-guidance');
@@ -3937,6 +3944,12 @@ function updateReadouts() {
   updateRasterResolutionReadout();
   updateVectorSimplificationUi();
   for (const node of all('[data-unit-label]')) node.textContent = state.unit;
+  const lightWidth = el('style-slat-light-width');
+  if (lightWidth) {
+    lightWidth.min = String(roundUnit(fromMm(0.1)));
+    lightWidth.max = String(roundUnit(fromMm(40)));
+    lightWidth.step = state.unit === 'in' ? '0.001' : '0.1';
+  }
   const profileStatus = state.cuttingProfile.status === 'verified' ? 'Verified' : 'Provisional';
   const manufacturingSummary = `${state.cuttingProfile.name} · ${profileStatus} · ${roundUnit(numberField('kerf', 1.2))} ${state.unit} kerf · ${roundUnit(numberField('min-web', 3))} ${state.unit} gaps · ${roundUnit(numberField('min-opening', 2))} ${state.unit} openings`;
   for (const node of all('[data-manufacturing-summary]')) node.textContent = manufacturingSummary;
@@ -4271,6 +4284,8 @@ function applyControls(controls = {}) {
     'artwork-offset-y': '0',
     // Projects saved before dot layouts existed always used the fixed grid.
     'style-dot-layout': 'grila',
+    // Older projects and candidates use the profile's original light width.
+    'style-slat-light-width': '',
   })) {
     if (!Object.hasOwn(controls, id)) migratedControls[id] = value;
   }
@@ -9175,7 +9190,7 @@ function wire() {
   }
   for (const id of ['style-threshold', 'style-outline', 'style-icon-balance', 'style-icon-detail',
     'style-icon-line-width', 'style-icon-simplify', 'style-icon-halo', 'style-icon-halo-scale',
-    'style-pitch', 'style-slat-angle', 'style-angle',
+    'style-pitch', 'style-slat-angle', 'style-slat-light-width', 'style-angle',
     'style-dot-pitch', 'style-dot-max', 'style-dot-angle', 'style-dot-cutoff',
     'style-dot-layout', 'style-dot-pitch-dark',
     'style-row-pitch', 'style-cell', 'style-tone-brightness', 'style-tone-contrast',
@@ -9317,7 +9332,7 @@ function wire() {
       'bridge-width', 'selected-bridge-width', 'selected-bridge-length',
       'selected-bridge-center-x', 'selected-bridge-center-y',
       'touchup-size', 'manual-edit-width', 'kerf', 'min-web', 'min-opening', 'max-cantilever', 'curve-tolerance',
-      'style-pitch', 'style-row-pitch', 'style-cell', 'style-line-width',
+      'style-pitch', 'style-slat-light-width', 'style-row-pitch', 'style-cell', 'style-line-width',
       'style-graphic-simplify', 'style-icon-line-width', 'style-icon-simplify',
       'style-wood-spacing', 'style-wood-length', 'style-silhouette-smooth',
       'style-flow-pitch', 'style-flow-width', 'style-flow-smooth',

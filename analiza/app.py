@@ -224,6 +224,7 @@ async def analizeaza(
     pas_mm: float = Form(38.0),
     orizontal: bool = Form(False),
     unghi_lamele: float | None = Form(None),
+    latime_lumina_lamele_mm: float | None = Form(None),
     # hatch
     unghi: float = Form(30.0),
     pas_rand_mm: float = Form(9.0),
@@ -254,9 +255,16 @@ async def analizeaza(
         punte_min_mm = punte_pentru_interpretare(
             punte_min_mm, kerf_mm, interpretare_geometrie
         )
+        if stil == "lamele" and latime_lumina_lamele_mm is not None:
+            latime_lumina_lamele_mm = punte_pentru_interpretare(
+                latime_lumina_lamele_mm, kerf_mm, interpretare_geometrie
+            )
     except ReglajImposibil as e:
         raise HTTPException(422, str(e)) from e
-    lat_geometrie = _latime_lucru(coala_lat_mm, min(punte_min_mm, fanta_min_mm))
+    limita_min_mm = min(punte_min_mm, fanta_min_mm)
+    if stil == "lamele" and latime_lumina_lamele_mm is not None:
+        limita_min_mm = min(limita_min_mm, latime_lumina_lamele_mm)
+    lat_geometrie = _latime_lucru(coala_lat_mm, limita_min_mm)
 
     if stil == "linie_art":
         mare = _citeste_linie(date, lat_geometrie)
@@ -353,7 +361,8 @@ async def analizeaza(
         elif stil == "lamele":
             masca, zone_luminoase = lamele(camp, mm_pe_px, pas_mm=pas_mm, punte_min_mm=punte_min_mm,
                            fanta_min_mm=fanta_min_mm, gamma=gamma, orizontal=orizontal,
-                           unghi=unghi_lamele, returneaza_geometrie=True)
+                           unghi=unghi_lamele, returneaza_geometrie=True,
+                           latime_lumina_mm=latime_lumina_lamele_mm)
             info_suplimentar = {
                 "slatHighlights": {
                     "version": 1,

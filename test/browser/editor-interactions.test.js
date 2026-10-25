@@ -201,9 +201,17 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
   test(`empty-state import opens the file picker at ${viewport.width}px`, async () => {
     const fixture = await openEditor({ viewport, importProject: false });
     try {
-      await fixture.page.route('**/api/analizeaza', (route) => route.fulfill({
-        json: { sourceMask: encodeMask(patternedMask(96, 68)), info: { material: 0.5 } },
-      }));
+      const renders = [];
+      await fixture.page.route('**/api/analizeaza', async (route) => {
+        const request = route.request();
+        const form = await new Response(request.postDataBuffer(), {
+          headers: { 'content-type': request.headers()['content-type'] },
+        }).formData();
+        renders.push(form);
+        await route.fulfill({
+          json: { sourceMask: encodeMask(patternedMask(96, 68)), info: { material: 0.5 } },
+        });
+      });
       const imageData = await fixture.page.evaluate(() => {
         const canvas = document.createElement('canvas');
         canvas.width = 96;
@@ -238,11 +246,57 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
       assert.equal(fitting.disabled, true);
       assert.equal(fitting.broadSimplification, false, 'slats must not simplify shadow contours automatically');
       assert.equal(fitting.tolerance, 0.2);
+      const lightWidth = fixture.page.getByLabel('Light-area bar width', { exact: false });
+      assert.equal(await lightWidth.inputValue(), '');
+      assert.equal(renders.at(-1).has('latime_lumina_lamele_mm'), false, 'Auto must keep the original curve');
+      const customRender = fixture.page.waitForResponse((response) => response.url().endsWith('/api/analizeaza') &&
+        response.request().postData()?.includes('latime_lumina_lamele_mm'));
+      await lightWidth.fill('2');
+      await customRender;
+      assert.equal(renders.at(-1).get('latime_lumina_lamele_mm'), '2');
+      assert.equal(renders.at(-1).get('punte_min_mm'), '3', 'an artistic width must not lower the cutting-profile minimum');
+      assert.match(await fixture.page.locator('#style-guidance-reason').textContent(),
+        /Light-area bars use 2 mm; Validate still checks the 3 mm minimum/);
+      const autoRender = fixture.page.waitForResponse((response) => response.url().endsWith('/api/analizeaza') &&
+        !response.request().postData()?.includes('latime_lumina_lamele_mm'));
+      await lightWidth.fill('');
+      await autoRender;
+      assert.equal(renders.at(-1).has('latime_lumina_lamele_mm'), false);
     } finally {
       await fixture.close();
     }
   });
 }
+
+test('Slat light width survives project download and unit conversion; older candidates restore Auto', async () => {
+  const project = JSON.parse(mixedHighlightProject());
+  project.editor.controls['style-slat-light-width'] = '2';
+  const fixture = await openEditor({ projectText: JSON.stringify(project) });
+  const { page } = fixture;
+  try {
+    const width = page.locator('#style-slat-light-width');
+    assert.equal(await width.inputValue(), '2');
+    await page.getByRole('tab', { name: /Panel/ }).click();
+    await page.locator('#measurement-unit').selectOption('in');
+    assert.ok(Math.abs(Number(await width.inputValue()) * 25.4 - 2) < 0.013);
+    await page.locator('#measurement-unit').selectOption('mm');
+    assert.equal(await width.inputValue(), '2');
+    await page.getByRole('tab', { name: /Export/ }).click();
+    const download = page.waitForEvent('download');
+    await page.locator('#btn-download-project').click();
+    const saved = JSON.parse(fs.readFileSync(await (await download).path(), 'utf8'));
+    assert.equal(saved.editor.controls['style-slat-light-width'], '2');
+    await page.getByRole('tab', { name: /Prepare/ }).click();
+    await page.getByRole('button', { name: 'Restore Synthetic alternate' }).click();
+    assert.equal(await width.inputValue(), '', 'old candidates must not inherit a width from the current render');
+    await page.locator('#file-input').setInputFiles({
+      name: 'synthetic-width.stencil.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved)),
+    });
+    await page.waitForFunction(() => document.querySelector('#style-slat-light-width').value === '2');
+  } finally {
+    await fixture.close();
+  }
+});
 
 async function canvasChecksum(page) {
   return page.locator('#editor-canvas').evaluate((canvas) => {

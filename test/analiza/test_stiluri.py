@@ -256,6 +256,55 @@ class TestLamele(unittest.TestCase):
                             fanta_min_mm=3, unghi=-55, returneaza_geometrie=True)
         self.assertEqual(regions, [], "rotation padding must never grant permission to straighten shadows")
 
+    def test_custom_light_width_thins_highlights_and_preserves_the_dark_curve(self):
+        # A synthetic tone ramp includes white, pale ink, midtones and shadows.
+        # Only the first quarter of the tone range may change.
+        camp = np.repeat(np.linspace(0, 1, 240, dtype=np.float32)[:, None], 320, axis=1)
+        config = dict(pas_mm=10, punte_min_mm=3, fanta_min_mm=2, gamma=0.8)
+        original = lamele(camp, MM_PE_PX, **config)
+        thinner = lamele(camp, MM_PE_PX, latime_lumina_mm=2, **config)
+        np.testing.assert_array_equal(thinner[60:], original[60:])
+        self.assertTrue(np.all(original[thinner]), "thinning cannot add metal")
+        self.assertEqual(set(secvente_pe_rand(original, 0)), {6})
+        self.assertEqual(set(secvente_pe_rand(thinner, 0)), {4})
+        self.assertLess(thinner[:60].sum(), original[:60].sum())
+        same = lamele(camp, MM_PE_PX, latime_lumina_mm=3, **config)
+        np.testing.assert_array_equal(same, original)
+
+    def test_custom_diagonal_light_width_keeps_straight_bars_and_light_guidance(self):
+        height, width = 240, 320
+        config = dict(pas_mm=10, punte_min_mm=3, fanta_min_mm=2, unghi=-55)
+        original = lamele(camp_uniform(height, width, 0), MM_PE_PX, **config)
+        thinner, regions = lamele(camp_uniform(height, width, 0), MM_PE_PX,
+                                  latime_lumina_mm=1.5, returneaza_geometrie=True, **config)
+        # The custom width must have precisely the same continuous edges as
+        # the original generator with that narrower minimum, not eroded steps.
+        expected = lamele(camp_uniform(height, width, 0), MM_PE_PX,
+                          **{**config, "punte_min_mm": 1.5})
+        np.testing.assert_array_equal(thinner, expected)
+        self.assertLess(thinner.sum(), original.sum() * 0.6)
+        self.assertGreater(len(regions), 0)
+        dark = camp_uniform(height, width, 0.8)
+        np.testing.assert_array_equal(
+            lamele(dark, MM_PE_PX, latime_lumina_mm=1.5, **config),
+            lamele(dark, MM_PE_PX, **config),
+        )
+        # The legacy horizontal orientation must still use the same width.
+        horizontal = lamele(camp_uniform(height, width, 0), MM_PE_PX,
+                            latime_lumina_mm=1.5, **{**config, "unghi": 0})
+        self.assertTrue(all(abs(run * MM_PE_PX - 1.5) <= MM_PE_PX
+                            for run in secvente_pe_rand(horizontal.T, 100)))
+
+    def test_custom_light_width_rejects_invalid_or_undrawable_sizes(self):
+        for value in (0, -1, float("nan"), float("inf"), 8.1, 0.1):
+            with self.subTest(width=value), self.assertRaises(ReglajImposibil):
+                lamele(camp_uniform(100, 100, 0), MM_PE_PX, pas_mm=10,
+                       punte_min_mm=3, fanta_min_mm=2, latime_lumina_mm=value)
+        # Widening is allowed, but must always preserve the configured slot.
+        wide = lamele(camp_uniform(100, 100, 0.08), MM_PE_PX, pas_mm=10,
+                      punte_min_mm=3, fanta_min_mm=2, latime_lumina_mm=8)
+        self.assertLessEqual(max(secvente_pe_rand(wide, 50)), 16)
+
 
 class TestRezolutie(unittest.TestCase):
     def test_o_limita_sub_un_pixel_e_refuzata(self):

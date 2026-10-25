@@ -954,6 +954,7 @@ def lamele(
     orizontal: bool = False,
     unghi: float | None = None,
     returneaza_geometrie: bool = False,
+    latime_lumina_mm: float | None = None,
 ) -> np.ndarray | tuple[np.ndarray, list[list[float]]]:
     """Parallel bars whose width follows the ink.
 
@@ -962,6 +963,8 @@ def lamele(
     angle is supplied: horizontal is 0 degrees and vertical is 90 degrees.
     The tone field is sampled in bar coordinates. Diagonal edges are evaluated
     directly on the source grid, avoiding a second rasterization of the bars.
+    An explicit light width changes highlights only, fading out by 25% ink.
+    It is an artistic override; downstream validation still checks minimum web.
     """
     if pas_mm < punte_min_mm + fanta_min_mm:
         raise ReglajImposibil(
@@ -970,6 +973,13 @@ def lamele(
             f"{punte_min_mm + fanta_min_mm:.2f} mm."
         )
     _verifica_rezolutie(mm_pe_px, **{"The web": punte_min_mm, "The opening": fanta_min_mm})
+    if latime_lumina_mm is not None:
+        if not np.isfinite(latime_lumina_mm) or not 0 < latime_lumina_mm <= pas_mm - fanta_min_mm:
+            raise ReglajImposibil(
+                "The light-area bar width must be positive and leave the minimum opening; "
+                f"use at most {pas_mm - fanta_min_mm:.2f} mm."
+            )
+        _verifica_rezolutie(mm_pe_px, **{"The light-area bar": latime_lumina_mm})
     if unghi is None:
         unghi = 0.0 if orizontal else 90.0
     if not np.isfinite(unghi) or not -90.0 <= unghi <= 90.0:
@@ -1011,10 +1021,10 @@ def lamele(
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=0.0,
         )
-        if returneaza_geometrie:
+        if returneaza_geometrie or latime_lumina_mm is not None:
             acoperire = cv2.warpAffine(
-                np.ones(camp.shape, np.uint8), matrice, (latime_rotita, inaltime_rotita),
-                flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+                np.ones(camp.shape, np.float32), matrice, (latime_rotita, inaltime_rotita),
+                flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0,
             )
         intoarcere = matrice
     inaltime, latime = lucru.shape
@@ -1046,6 +1056,18 @@ def lamele(
             continue
         cerneala = lucru[:, st:dr].mean(axis=1)
         latimi = punte_min + np.power(cerneala, gamma) * (punte_max - punte_min)
+        if latime_lumina_mm is not None:
+            # Smoothly join the original tone curve, with zero change to
+            # midtones and shadows. Preserve the slot even when widening.
+            # Rotation padding must not turn a dark image edge into a light
+            # tone eligible for thinning. Use only covered image samples.
+            cerneala_lumina = cerneala if acoperire is None else (
+                cerneala / np.maximum(acoperire[:, st:dr].mean(axis=1), 1e-6)
+            )
+            lumina = np.clip(1.0 - cerneala_lumina / 0.25, 0.0, 1.0)
+            pondere = lumina * lumina * (3.0 - 2.0 * lumina)
+            latimi = np.minimum(punte_max, latimi +
+                                (latime_lumina_mm / mm_pe_px - punte_min) * pondere)
         if returneaza_geometrie:
             # These rectangles identify LIGHT runs only. They do not change
             # any widths or filter the shadow signal. The vector stage can
