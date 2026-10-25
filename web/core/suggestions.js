@@ -456,6 +456,28 @@ function slatAttachmentClearance(gap, mask, sheet, pixel, along, clearanceMm) {
       }
     }
   }
+  // A bar may continue into solid letterbox/frame metal, so retained material
+  // alone cannot locate the slat's usable end. Its cut channel must continue
+  // as well; otherwise the tie sits on the slot mouth and makes a tiny notch.
+  const across = { x: -along.y, y: along.x };
+  const startAlong = projectedPoint(gap.start, along);
+  const endAlong = projectedPoint(gap.end, along);
+  const minimumAlong = Math.min(startAlong, endAlong) - clearanceMm;
+  const maximumAlong = Math.max(startAlong, endAlong) + clearanceMm;
+  const startAcross = projectedPoint(gap.start, across);
+  const endAcross = projectedPoint(gap.end, across);
+  const samples = [0.25, 0.5, 0.75].map((fraction) => startAcross + (endAcross - startAcross) * fraction);
+  const channelSteps = Math.max(1, Math.ceil((maximumAlong - minimumAlong) / (Math.min(pixel.x, pixel.y) * 0.5)));
+  for (let step = 0; step <= channelSteps; step += 1) {
+    const station = minimumAlong + (maximumAlong - minimumAlong) * step / channelSteps;
+    const openingContinues = samples.some((offset) => {
+      const x = along.x * station + across.x * offset;
+      const y = along.y * station + across.y * offset;
+      return x >= 0 && y >= 0 && x < sheet.widthMm && y < sheet.heightMm &&
+        mask.data[Math.floor(y / pixel.y) * mask.width + Math.floor(x / pixel.x)] === 0;
+    });
+    if (!openingContinues) return false;
+  }
   return true;
 }
 

@@ -10,6 +10,7 @@ import {
   erodeMaskPhysical,
   suggestBridges,
   suggestKerfAwareBridges,
+  suggestSlatStabilizers,
 } from "../../web/core/index.js";
 import { maskFromAscii, narrowBridgeFixture } from "./fixtures.js";
 
@@ -544,10 +545,39 @@ test("slat stabilizers stay inside individual slat ends rather than following th
   assert.ok(attachments.length > 0, "the shorter slat should still receive interior braces");
   assert.ok(attachments.every((point) => point.y >= 10.5 && point.y <= 30.5),
     "bridge attachments need clearance from both local tips");
-  const positions = [8.5, ...attachments.map((point) => point.y), 32.5].sort((a, b) => a - b);
+  // The retained rail at y=20 already braces the shorter slat. New ties
+  // should clear that existing connection rather than duplicate it.
+  const positions = [8.5, 20.5, ...attachments.map((point) => point.y), 32.5].sort((a, b) => a - b);
   for (let index = 1; index < positions.length; index += 1) {
     assert.ok(positions[index] - positions[index - 1] <= 10,
       "interior placement must still brace the shorter slat at its target span");
+  }
+});
+
+test("slat stabilizers leave clearance from cut mouths even when the bars merge into solid letterbox metal", () => {
+  const mask = createMask(61, 61);
+  const anchorMask = createMask(61, 61);
+  for (let y = 0; y < 61; y += 1) {
+    for (let x = 0; x < 61; x += 1) {
+      const solidBorder = y < 20 || y >= 51;
+      mask.data[y * 61 + x] = solidBorder || [6, 14, 22, 30, 38, 46, 54].includes(x) ? 1 : 0;
+      anchorMask.data[y * 61 + x] = y === 0 || y === 60 ? 1 : 0;
+    }
+  }
+  for (const organicVariation of [0, 1]) for (const followFeatures of [false, true]) {
+    const bridges = suggestSlatStabilizers(mask, {
+      sheet: { widthMm: 61, heightMm: 61 }, anchorMask,
+      widthMm: 2, barAngleDeg: 90, slatPitchMm: 8, maximumUnsupportedSpanMm: 25,
+      organicVariation,
+      featureAt: followFeatures
+        ? ({ y }) => ({ lightness: y < 24 ? 0 : 0.5, strength: 0, tangentAngleDeg: 0 })
+        : null,
+    });
+    assert.ok(bridges.length > 0, 'interior ties should still be available');
+    for (const bridge of bridges) for (const point of [bridge.start, bridge.end]) {
+      assert.ok(point.y >= 24 && point.y < 47,
+        'the whole attachment must clear both ends of the cut, not just stay in retained metal');
+    }
   }
 });
 

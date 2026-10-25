@@ -13,6 +13,38 @@ import {
 } from '../../web/core/index.js';
 import { maskFromAscii } from './fixtures.js';
 
+test('an unchanged repeated raster corner has zero deviation and preserves its original contact', () => {
+  const mask = maskFromAscii(['#####', '#.###', '##.##', '#####', '#####']);
+  const source = traceMaskContours(mask);
+  assert.ok(source.some((contour) => new Set(contour.map((point) => `${point.x},${point.y}`)).size < contour.length));
+  for (const candidate of [source, source.map((contour) => contour.map((point) => ({ ...point })))]) {
+    const result = validateVectorGeometry(source, candidate, mask, { widthMm: 5, heightMm: 5 }, [], 0);
+    assert.equal(result.valid, true, result.errors.join('; '));
+    assert.equal(result.maximumDeviationMm, 0);
+  }
+  const sharedReferences = source.map((contour) => {
+    const points = new Map();
+    return contour.map((point) => {
+      const key = `${point.x},${point.y}`;
+      if (!points.has(key)) points.set(key, point);
+      return points.get(key);
+    });
+  });
+  const result = validateVectorGeometry(sharedReferences, sharedReferences, mask, { widthMm: 5, heightMm: 5 }, [], 0);
+  assert.equal(result.valid, true, result.errors.join('; '));
+  assert.equal(result.maximumDeviationMm, 0);
+});
+
+test('rearranging branches at an existing shared corner is still rejected', () => {
+  const mask = maskFromAscii(['#####', '#.###', '##.##', '#####', '#####']);
+  const source = traceMaskContours(mask);
+  const candidate = source.map((contour) => contour.slice());
+  [candidate[1][3], candidate[1][5]] = [candidate[1][5], candidate[1][3]];
+  const result = validateVectorGeometry(source, candidate, mask, { widthMm: 5, heightMm: 5 }, [], 10);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((message) => /self-intersects/.test(message)), 'a known corner must not exempt changed incident edges');
+});
+
 test('a minimum-width diagonal slat exports long straight edges without new manufacturing failures', () => {
   const mask = createMask(320, 240);
   const sheet = { widthMm: 192, heightMm: 144 }; // 0.6 mm cells, as in a zoomed panel

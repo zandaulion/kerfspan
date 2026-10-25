@@ -6,7 +6,7 @@ import { straightenSlatHighlightContours } from './slat-highlights.js';
 
 const EPSILON = 1e-9;
 
-export const VECTOR_SIMPLIFICATION_MODEL_VERSION = 2;
+export const VECTOR_SIMPLIFICATION_MODEL_VERSION = 3;
 
 export function vectorManufacturingValidationRegressed(baseline, candidate) {
   if (!candidate?.valid || countValidationLocations(candidate, 'error') > 0) return true;
@@ -123,7 +123,57 @@ function segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd) {
     (Math.abs(o4) <= EPSILON && onSegment(secondStart, secondEnd, firstEnd));
 }
 
-function intersectionErrors(contours, scaleX, scaleY, sheet) {
+function originalCornerContacts(contours, scaleX, scaleY) {
+  const occurrences = new Map();
+  const edgeKey = (contour, start, end) => `${contour}|${pointKey(start)}>${pointKey(end)}`;
+  for (let contour = 0; contour < contours.length; contour += 1) {
+    for (const point of contours[contour]) {
+      const key = pointKey(physicalPoint(point, scaleX, scaleY));
+      if (!occurrences.has(key)) occurrences.set(key, []);
+      occurrences.get(key).push(contour);
+    }
+  }
+  const contacts = new Set();
+  for (const [key, owners] of occurrences) {
+    for (let index = 1; index < owners.length; index += 1) {
+      for (let other = 0; other < index; other += 1) {
+        contacts.add(`${Math.min(owners[index], owners[other])}:${Math.max(owners[index], owners[other])}|${key}`);
+      }
+    }
+  }
+  const edges = new Set();
+  for (let contour = 0; contour < contours.length; contour += 1) {
+    const points = contours[contour];
+    for (let index = 0; index < points.length; index += 1) {
+      const start = physicalPoint(points[index], scaleX, scaleY);
+      const end = physicalPoint(points[(index + 1) % points.length], scaleX, scaleY);
+      if (occurrences.get(pointKey(start)).length > 1 || occurrences.get(pointKey(end)).length > 1) {
+        edges.add(edgeKey(contour, start, end));
+      }
+    }
+  }
+  return { contacts, edges, edgeKey };
+}
+
+function unchangedCornerContact(first, second, original) {
+  const shared = [first.start, first.end].find((point) =>
+    pointKey(point) === pointKey(second.start) || pointKey(point) === pointKey(second.end));
+  if (!shared) return false;
+  const pair = `${Math.min(first.contourIndex, second.contourIndex)}:${Math.max(first.contourIndex, second.contourIndex)}|${pointKey(shared)}`;
+  if (!original.contacts.has(pair) ||
+      !original.edges.has(original.edgeKey(first.contourIndex, first.start, first.end)) ||
+      !original.edges.has(original.edgeKey(second.contourIndex, second.start, second.end))) return false;
+  const a = pointKey(shared) === pointKey(first.start) ? first.end : first.start;
+  const b = pointKey(shared) === pointKey(second.start) ? second.end : second.start;
+  // Shared endpoints are allowed only when BOTH incident edges are unchanged.
+  // Collinear overlap and newly crossed/rearranged branches still fail.
+  const overlap = Math.abs(orientation(shared, a, b)) <= EPSILON &&
+    (a.x - shared.x) * (b.x - shared.x) + (a.y - shared.y) * (b.y - shared.y) > EPSILON;
+  return !overlap;
+}
+
+function intersectionErrors(contours, scaleX, scaleY, sheet, sourceContours) {
+  const original = originalCornerContacts(sourceContours, scaleX, scaleY);
   const segments = [];
   for (let contourIndex = 0; contourIndex < contours.length; contourIndex += 1) {
     const contour = contours[contourIndex];
@@ -160,6 +210,7 @@ function intersectionErrors(contours, scaleX, scaleY, sheet) {
         if (difference === 1 || difference === current.count - 1) continue;
       }
       if (segmentsIntersect(current.start, current.end, other.start, other.end)) {
+        if (unchangedCornerContact(current, other, original)) continue;
         errors.push(other.contourIndex === current.contourIndex
           ? `Contour ${current.contourIndex + 1} self-intersects after simplification.`
           : `Contours ${other.contourIndex + 1} and ${current.contourIndex + 1} intersect after simplification.`);
@@ -221,10 +272,42 @@ function containmentSignature(contours, scaleX, scaleY, sheet) {
   });
 }
 
+function orderedSourceIndices(source, candidate) {
+  // Raster contours can visit the same corner twice. Coordinates alone lose
+  // which occurrence a fitted vertex came from and can send the deviation
+  // walk around an unrelated part of the contour.
+  const identities = new Map();
+  source.forEach((point, index) => identities.set(point, identities.has(point) ? undefined : index));
+  const direct = candidate.map((point) => identities.get(point));
+  if (direct.every((index) => index !== undefined)) return direct;
+  const positions = new Map();
+  source.forEach((point, index) => {
+    const key = pointKey(point);
+    if (!positions.has(key)) positions.set(key, []);
+    positions.get(key).push(index);
+  });
+  const starts = direct[0] !== undefined ? [direct[0]] : positions.get(pointKey(candidate[0])) ?? [];
+  for (const start of starts) {
+    const result = [start];
+    let cursor = start;
+    for (let index = 1; index < candidate.length; index += 1) {
+      const matches = direct[index] !== undefined ? [direct[index]] : positions.get(pointKey(candidate[index]));
+      if (!matches?.length) break;
+      const current = cursor % source.length;
+      const next = matches.find((position) => position > current);
+      cursor = Math.floor(cursor / source.length) * source.length +
+        (next ?? matches[0] + source.length);
+      if (cursor >= start + source.length) break;
+      result.push(cursor % source.length);
+    }
+    if (result.length === candidate.length) return result;
+  }
+  return null;
+}
+
 function maximumContourDeviation(source, candidate, scaleX, scaleY) {
-  const sourceIndex = new Map(source.map((point, index) => [pointKey(point), index]));
-  const indices = candidate.map((point) => sourceIndex.get(pointKey(point)));
-  if (indices.some((index) => index === undefined)) return Number.POSITIVE_INFINITY;
+  const indices = orderedSourceIndices(source, candidate);
+  if (!indices) return Number.POSITIVE_INFINITY;
   let maximum = 0;
   for (let segmentIndex = 0; segmentIndex < candidate.length; segmentIndex += 1) {
     const startIndex = indices[segmentIndex];
@@ -312,7 +395,7 @@ export function validateVectorGeometry(sourceContours, candidateContours, mask, 
   if (maximumDeviationMm > toleranceMm + 1e-7) {
     errors.push(`Maximum boundary deviation ${maximumDeviationMm.toFixed(4)} mm exceeds ${toleranceMm} mm.`);
   }
-  errors.push(...intersectionErrors(candidateContours, scaleX, scaleY, sheet));
+  errors.push(...intersectionErrors(candidateContours, scaleX, scaleY, sheet, sourceContours));
   const sourceContainment = containmentSignature(sourceContours, scaleX, scaleY, sheet);
   const candidateContainment = containmentSignature(candidateContours, scaleX, scaleY, sheet);
   if (JSON.stringify(sourceContainment) !== JSON.stringify(candidateContainment)) {

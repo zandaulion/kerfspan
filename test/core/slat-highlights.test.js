@@ -48,6 +48,22 @@ test('missing or dark-only guidance preserves the original contours exactly', ()
   assert.deepEqual(fit.contours, original);
 });
 
+test('an unchanged corner contact elsewhere in the panel cannot cancel light-run straightening', () => {
+  const { mask, sheet, placed } = mixedSlatFixture();
+  // Two diagonal pinholes in the solid frame produce a repeated contour
+  // vertex. They stay exact and must not trigger a global fitting fallback.
+  mask.data[3 * mask.width + 3] = 0;
+  mask.data[4 * mask.width + 4] = 0;
+  const original = traceMaskContours(mask);
+  assert.ok(original.some((contour) => new Set(contour.map((point) => `${point.x},${point.y}`)).size < contour.length));
+  const fit = prepareVectorGeometry(mask, sheet, [], { simplify: false, slatHighlights: placed });
+  assert.equal(fit.report.status, 'simplified', fit.report.fallbackReason);
+  assert.ok(fit.report.highlightRunCount >= 2);
+  assert.ok(fit.report.maximumDeviationMm <= fit.report.appliedToleranceMm);
+  assert.equal(fit.rasterMask.data[3 * mask.width + 3], 0);
+  assert.equal(fit.rasterMask.data[4 * mask.width + 4], 0);
+});
+
 test('highlight regions survive project and candidate storage without shared mutation', () => {
   const { highlights } = mixedSlatFixture();
   const project = createProject({ editor: {

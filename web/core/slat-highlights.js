@@ -86,15 +86,24 @@ export function straightenSlatHighlightContours(contours, mask, sheet, guide) {
   const inLight = (point) => (buckets.get(Math.floor(point.across / bucketWidth)) ?? []).some((box) =>
     point.across >= box.minAcross && point.across <= box.maxAcross &&
     point.along >= box.minAlong && point.along <= box.maxAlong);
+  const occurrences = new Map();
+  for (const contour of contours) for (const point of contour) {
+    const key = `${point.x},${point.y}`;
+    occurrences.set(key, (occurrences.get(key) ?? 0) + 1);
+  }
+  const repeated = (point) => occurrences.get(`${point.x},${point.y}`) > 1;
   let replacedRuns = 0;
   const fitted = contours.map((contour) => {
-    const points = contour.map((point) => {
+    const points = contour.map((point, index) => {
       const physical = { x: point.x * scaleX, y: point.y * scaleY };
       const projected = project(physical.x, physical.y);
-      return { source: point, physical, ...projected, light: inLight(projected) };
+      const protectsCorner = repeated(point) || repeated(contour[(index + 1) % contour.length]) ||
+        repeated(contour[(index + contour.length - 1) % contour.length]);
+      return { source: point, physical, ...projected, light: !protectsCorner && inLight(projected) };
     });
-    const anchor = Math.max(0, points.findIndex((point) => !point.light));
-    const ordered = [...points.slice(anchor), ...points.slice(0, anchor)];
+    // Preserve the original start vertex as well as cyclic order. Contours
+    // that touch at a raster corner must keep the same nesting reference.
+    const ordered = points;
     const output = [];
     for (let start = 0; start < ordered.length;) {
       let end = start;
