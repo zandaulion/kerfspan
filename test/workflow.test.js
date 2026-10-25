@@ -336,10 +336,10 @@ test('exports disclose raster precision and retain an auditable release manifest
   assert.match(editor, /effectiveRasterResolution\(mask, sheet\(\)\)/);
   assert.match(editor, /createReleaseManifest\(\{[\s\S]*?validationModelVersion: GEOMETRY_VALIDATION_MODEL_VERSION/);
   assert.match(editor, /saveArtifact\(state\.projectId, \{[\s\S]*?releaseManifest/);
-  assert.match(editor, /runGeometryJob\('vector-prepare',[\s\S]*?exactCircleHoles: vectorCircleHoles/);
+  assert.match(editor, /vectorPreviewJobs\.run\(baseline \? 'vector-prepare' : 'vector-preview',[\s\S]*?exactCircleHoles: availableVectorDotHoles\(\)/);
   assert.match(geometryJobsCore, /prepareVectorGeometry[\s\S]*?postFitValidation = validateDesign\(prepared\.rasterMask/);
   assert.match(editor, /!Object\.hasOwn\(controls, 'export-simplify'\)[\s\S]*?migratedControls\['export-simplify'\] = false/);
-  assert.match(editor, /vectorManufacturingValidationRegressed\(state\.validation, postFitValidation\)/);
+  assert.match(editor, /vectorManufacturingValidationRegressed\(baselineValidation, postFitValidation\)/);
   assert.match(editor, /contours: prepared\.exactRasterContours,[\s\S]*?matchedCircles: \[\]/);
   assert.match(editor, /vectorGeometry: preparedGeometry/);
   assert.match(editor, /vectorProcessing: preparedGeometry\?\.report/);

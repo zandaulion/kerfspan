@@ -4029,6 +4029,7 @@ select:focus {
 
 #editor-canvas,
 #vector-dot-layer,
+#vector-cut-layer,
 #overlay-canvas {
   position: absolute;
   inset: 0;
@@ -4036,10 +4037,15 @@ select:focus {
   height: 100%;
 }
 
-#vector-dot-layer {
+#vector-dot-layer,
+#vector-cut-layer {
   z-index: 1;
   overflow: visible;
   pointer-events: none;
+}
+
+.canvas-stage[data-cut-preview="vector"] #editor-canvas {
+  visibility: hidden;
 }
 
 #overlay-canvas {

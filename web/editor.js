@@ -1362,6 +1362,40 @@ function updateGeometryPreviewState() {
       : 'A quick draft is visible while the final style geometry is pending.';
     return;
   }
+  if (state.repairPreviewMask && ['material', 'backlit', 'issues'].includes(state.view)) {
+    container.dataset.state = 'provisional';
+    label.textContent = 'Repair preview';
+    copy.textContent = 'Apply the proposed repairs, then check the updated cutting paths.';
+    return;
+  }
+  const legacySimulation = ['material', 'backlit'].includes(state.view) &&
+    el('simulate-kerf')?.checked && isLegacyGeometryInterpretation(state.geometryInterpretation) &&
+    toMm(numberField('kerf', 1.2)) > 0;
+  if (legacySimulation) {
+    container.dataset.state = 'processed';
+    label.textContent = 'Finished-part simulation';
+    copy.textContent = 'Legacy kerf simulation. Select Design contours to inspect the exported paths.';
+    return;
+  }
+  if (el('canvas-stage')?.dataset.cutPreview === 'vector') {
+    const checked = vectorPreview?.checked === true;
+    container.dataset.state = checked ? 'processed' : 'provisional';
+    label.textContent = checked ? 'Export path preview' : 'Vector draft';
+    copy.textContent = checked
+      ? vectorPreview.prepared.report.status === 'fallback'
+        ? 'Shows the exact contours retained by the export safety fallback.'
+        : 'Shows the same paths used for SVG and DXF. Review any remaining issues before export.'
+      : 'Fitted cutting paths. Run all checks to confirm the final export geometry.';
+    return;
+  }
+  if (['material', 'backlit', 'issues'].includes(state.view) && !state.touchupLive) {
+    container.dataset.state = 'provisional';
+    label.textContent = vectorPreview?.failed ? 'Raster preview' : 'Updating cut paths…';
+    copy.textContent = vectorPreview?.failed
+      ? 'Cut path preparation failed. Change an export setting to retry.'
+      : 'Preparing the vector paths for the current design and export settings.';
+    return;
+  }
   container.dataset.state = 'processed';
   label.textContent = 'Processed geometry';
   copy.textContent = 'Final style render; manufacturing validation is separate.';
@@ -1377,6 +1411,9 @@ let processingRetry = null;
 let processingPanelStartedAt = null;
 let geometryJobSequence = 0;
 const geometryJobs = createWorkerJobRunner({ workerUrl: '/workers/geometry.js' });
+const vectorPreviewJobs = createWorkerJobRunner({ workerUrl: '/workers/geometry.js' });
+let vectorPreview = null;
+let vectorPreviewTimer = null;
 // Project raster encoding is intentionally isolated from validation. Large
 // panels can contain several million cells; RLE encoding them on the UI thread
 // made the brush pause shortly after every autosave-worthy gesture.
@@ -1701,6 +1738,8 @@ async function renderStyle() {
       const toleranceMm = Math.max(0.01, Math.min(10, cellDiagonalMm));
       el('curve-tolerance').value = String(Math.ceil(fromMm(toleranceMm) * precision) / precision);
       updateVectorSimplificationUi();
+      invalidateVectorPreview();
+      draw();
     }
     if (!hadPlacedMask) fitToView();
     recordProcessingMetric('render', performance.now() - renderStartedAt);
@@ -1891,6 +1930,7 @@ function finishedGeometryPreview(mask) {
 }
 
 function invalidateValidation({ clearAnalysis = false } = {}) {
+  invalidateVectorPreview();
   if (geometryJobs.active) geometryJobs.cancel('Geometry changed; the outdated calculation was cancelled');
   cancelManualValidationReview();
   state.revision += 1;
@@ -2212,6 +2252,7 @@ async function validateCurrentGeometry({ reviewAnchor = null, focusReview = fals
   state.validatedRevision = state.revision;
   state.exportTimestamp = state.validation.valid ? new Date() : null;
   state.lastValidatedAt = new Date().toISOString();
+  invalidateVectorPreview();
   const reviewTarget = nextIssueReviewTarget(state.validation.issues ?? [], reviewAnchor);
   state.highlightedIssue = reviewTarget?.issue ?? null;
   state.highlightedIssueLocation = reviewTarget?.locationIndex ?? 0;
@@ -3203,15 +3244,122 @@ function updateToneInspector(preview = null) {
   }
 }
 
+function vectorPreviewKey() {
+  return JSON.stringify({
+    revision: state.revision,
+    checked: Boolean(state.validation && state.validatedRevision === state.revision),
+    frame: el('export-frame')?.checked !== false,
+    ...vectorPreparationOptions(),
+  });
+}
+
+function invalidateVectorPreview() {
+  clearTimeout(vectorPreviewTimer);
+  vectorPreviewTimer = null;
+  vectorPreviewJobs.cancel('Cut paths changed');
+  vectorPreview = null;
+  clearVectorDotPreview(el('vector-cut-layer'));
+  if (el('vector-cut-layer')) delete el('vector-cut-layer').dataset.key;
+  if (el('canvas-stage')) el('canvas-stage').dataset.cutPreview = 'raster';
+}
+
+function requestVectorPreview() {
+  clearTimeout(vectorPreviewTimer);
+  vectorPreviewTimer = null;
+  if (!state.designMask || state.touchupLive) return Promise.resolve(null);
+  const key = vectorPreviewKey();
+  if (vectorPreview?.key === key) return vectorPreview.promise;
+  const mask = geometryForExport();
+  const panel = sheet();
+  const options = vectorPreparationOptions();
+  const baseline = state.validatedRevision === state.revision ? state.validation : null;
+  const entry = { key, checked: Boolean(baseline), prepared: null, failed: false, pathData: '' };
+  vectorPreview = entry;
+  entry.promise = Promise.resolve().then(() => vectorPreviewJobs.run(baseline ? 'vector-prepare' : 'vector-preview', {
+    mask,
+    sheet: panel,
+    exactCircleHoles: availableVectorDotHoles(),
+    options,
+    validationOptions: currentValidationOptions(),
+  })).then(({ value: result }) => {
+    if (vectorPreview !== entry || key !== vectorPreviewKey()) return null;
+    entry.prepared = baseline
+      ? finalizePreparedVectorGeometry(result, mask, baseline, options)
+      : result.prepared;
+    // Use the SVG writer itself, including its precision and circle commands.
+    // SVG/DXF exports reuse entry.prepared rather than fitting a second time.
+    const svg = exportSvg(mask, panel, { preparedGeometry: entry.prepared, includeXmlDeclaration: false });
+    entry.pathData = new DOMParser().parseFromString(svg, 'image/svg+xml')
+      .querySelector('[data-stencil-role="retained-material"]')?.getAttribute('d') ?? '';
+    if (entry.checked) updateVectorSimplificationUi(entry.prepared.report);
+    draw();
+    return entry.prepared;
+  }).catch((error) => {
+    if (isJobCancelled(error) || vectorPreview !== entry) return null;
+    entry.prepared = null;
+    entry.failed = true;
+    console.error('Could not prepare the cut path preview:', error);
+    draw();
+    return null;
+  });
+  return entry.promise;
+}
+
+function drawVectorCutPreview(layer, mask, visible) {
+  if (!layer) return false;
+  if (!visible) {
+    layer.setAttribute('hidden', '');
+    return false;
+  }
+  const key = vectorPreviewKey();
+  const entry = vectorPreview?.key === key ? vectorPreview : null;
+  if (!entry?.prepared) {
+    layer.setAttribute('hidden', '');
+    if (!entry && vectorPreviewTimer === null) {
+      vectorPreviewTimer = setTimeout(() => void requestVectorPreview(), 180);
+    }
+    return false;
+  }
+  const backlit = state.view === 'backlit';
+  const namespace = 'http://www.w3.org/2000/svg';
+  if (layer.dataset.key !== key) {
+    const background = document.createElementNS(namespace, 'rect');
+    background.setAttribute('width', String(sheet().widthMm));
+    background.setAttribute('height', String(sheet().heightMm));
+    const path = document.createElementNS(namespace, 'path');
+    path.setAttribute('d', entry.pathData);
+    path.setAttribute('fill-rule', 'evenodd');
+    path.setAttribute('data-stencil-role', 'retained-material');
+    layer.setAttribute('viewBox', `0 0 ${sheet().widthMm} ${sheet().heightMm}`);
+    layer.setAttribute('preserveAspectRatio', 'none');
+    layer.setAttribute('width', String(mask.width));
+    layer.setAttribute('height', String(mask.height));
+    layer.replaceChildren(background, path);
+    layer.dataset.key = key;
+  }
+  layer.querySelector('rect').setAttribute('fill', backlit ? '#fff1be' : '#f5f4f0');
+  layer.querySelector('path').setAttribute('fill', backlit ? '#141c21' : '#2a2e34');
+  layer.dataset.checked = String(entry.checked);
+  layer.dataset.vertices = String(entry.prepared.report.outputVertexCount);
+  layer.removeAttribute('hidden');
+  return true;
+}
+
 function draw() {
   const canvas = el('editor-canvas');
   const overlay = el('overlay-canvas');
   const vectorLayer = el('vector-dot-layer');
+  const cutLayer = el('vector-cut-layer');
   if (!canvas || !overlay) return;
   updateTouchupHud();
   const mask = state.designMask;
   const stage = el('canvas-stage');
-  if (stage) stage.dataset.view = state.view;
+  if (stage) {
+    stage.dataset.view = state.view;
+    stage.dataset.cutPreview = 'raster';
+  }
+  // Every non-cut view and every in-progress edit hides the old paths first.
+  cutLayer?.setAttribute('hidden', '');
   const tonePreview = state.view === 'tone' ? currentTonePreview() : null;
   updateToneInspector(tonePreview);
   el('empty-state')?.toggleAttribute('hidden', Boolean(mask));
@@ -3219,7 +3367,7 @@ function draw() {
   if (!mask) {
     if (stage) { stage.style.width = ''; stage.style.height = ''; stage.style.transform = ''; }
     clearVectorDotPreview(vectorLayer);
-    clear(canvas); clear(overlay); renderRulers(); return;
+    clear(canvas); clear(overlay); renderRulers(); updateGeometryPreviewState(); return;
   }
 
   if (canvas.width !== mask.width || canvas.height !== mask.height) {
@@ -3239,6 +3387,7 @@ function draw() {
     drawPlacedImage(context, state.source.previewCanvas, mask);
     drawOverlay(overlay, mask);
     applyTransform();
+    updateGeometryPreviewState();
     return;
   }
   if (state.view === 'tone' && tonePreview?.canvas && state.placement) {
@@ -3246,6 +3395,7 @@ function draw() {
     drawPlacedImage(context, tonePreview.canvas, mask, '#f4f4f1');
     drawOverlay(overlay, mask);
     applyTransform();
+    updateGeometryPreviewState();
     return;
   }
   const image = context.createImageData(mask.width, mask.height);
@@ -3299,14 +3449,22 @@ function draw() {
   }
   context.putImageData(image, 0, 0);
 
+  const legacySimulation = Boolean(['material', 'backlit'].includes(state.view) && kerf && kerfErosionMm(
+    toMm(numberField('kerf', 1.2)), state.geometryInterpretation,
+  ) > 0);
+  const cutPathsVisible = drawVectorCutPreview(cutLayer, mask,
+    !repairPreviewVisible && !state.touchupLive && !legacySimulation &&
+    ['material', 'backlit', 'issues'].includes(state.view));
+  if (cutPathsVisible && stage) stage.dataset.cutPreview = 'vector';
   drawVectorDotPreview(vectorLayer, mask, {
-    visible: !repairPreviewVisible && ['source', 'material', 'backlit'].includes(state.view),
+    visible: !cutPathsVisible && !repairPreviewVisible && ['source', 'material', 'backlit'].includes(state.view),
     geometry: source,
     afterKerf: Boolean(kerf),
   });
 
   drawOverlay(overlay, mask);
   applyTransform();
+  updateGeometryPreviewState();
 }
 
 function clearVectorDotPreview(layer) {
@@ -3807,11 +3965,11 @@ function updateVectorSimplificationUi(report = null) {
   if (report.status === 'simplified') {
     status.textContent = `${report.sourceVertexCount.toLocaleString()} → ${report.outputVertexCount.toLocaleString()} vertices at ${formatMillimetres(report.appliedToleranceMm)} mm maximum deviation. Topology and manufacturing checks passed.`;
   } else if (report.status === 'unchanged') {
-    status.textContent = 'The exact trace already has no removable vertices within the requested tolerance; exact contours were exported.';
+    status.textContent = 'The exact trace already has no removable vertices within the requested tolerance; the preview and export use exact contours.';
   } else if (report.status === 'fallback') {
-    status.textContent = `Safety fallback: exact contours were exported. ${report.fallbackReason || 'The simplified result did not pass every check.'}`;
+    status.textContent = `Safety fallback: the preview and export use exact contours. ${report.fallbackReason || 'The simplified result did not pass every check.'}`;
   } else {
-    status.textContent = 'Exact raster trace exported without contour simplification.';
+    status.textContent = 'Preview and export use the exact raster trace without contour simplification.';
   }
 }
 
@@ -7734,37 +7892,40 @@ function postFitValidationRecord(validation, reusedCurrentValidation = false) {
   };
 }
 
-async function prepareGeometryForVectorExport(mask, vectorCircleHoles, requestedRevision) {
+async function prepareGeometryForVectorExport(requestedRevision) {
+  const key = vectorPreviewKey();
+  const prepared = await requestVectorPreview();
+  if (requestedRevision !== state.revision || key !== vectorPreviewKey()) {
+    toast('The design or export settings changed while the paths were checked. Export again.');
+    return null;
+  }
+  if (!prepared) {
+    toast('The cutting paths could not be prepared. Change an export setting to retry.');
+    return null;
+  }
+  return prepared;
+}
+
+function vectorPreparationOptions() {
   const simplify = el('export-simplify')?.checked === true;
   const requestedToleranceMm = Math.max(0.01, Math.min(10,
     toMm(numberField('curve-tolerance', state.unit === 'in' ? 0.008 : 0.2)),
   ));
-  const result = await runGeometryJob('vector-prepare', {
-    mask,
-    sheet: sheet(),
-    exactCircleHoles: vectorCircleHoles,
-    options: { simplify, toleranceMm: requestedToleranceMm },
-    validationOptions: currentValidationOptions(),
-  }, {
-    title: 'Preparing export vectors…',
-    detail: 'Simplifying within the physical limit, checking topology, and rechecking manufacturing constraints.',
-    retry: null,
-  });
-  if (!result) return null;
-  if (requestedRevision !== state.revision) {
-    toast('The design changed while export vectors were checked. Export again.');
-    return null;
-  }
+  return { simplify, toleranceMm: requestedToleranceMm };
+}
+
+function finalizePreparedVectorGeometry(result, mask, baselineValidation, options) {
+  const { simplify, toleranceMm: requestedToleranceMm } = options;
   let { prepared } = result;
   const changesRasterResult = result.changesRasterResult === true;
-  let postFitValidation = changesRasterResult ? result.postFitValidation : state.validation;
+  let postFitValidation = changesRasterResult ? result.postFitValidation : baselineValidation;
   const regressed = changesRasterResult &&
-    vectorManufacturingValidationRegressed(state.validation, postFitValidation);
+    vectorManufacturingValidationRegressed(baselineValidation, postFitValidation);
   if (regressed) {
     const attempted = prepared.report;
     const blockerCount = countValidationLocations(postFitValidation, 'error');
     const warningCount = countValidationLocations(postFitValidation, 'warning');
-    const currentWarningCount = countValidationLocations(state.validation, 'warning');
+    const currentWarningCount = countValidationLocations(baselineValidation, 'warning');
     const reason = blockerCount > 0
       ? `The rasterized vector result introduced ${blockerCount} blocking ${blockerCount === 1 ? 'location' : 'locations'}.`
       : `The rasterized vector result increased advisory locations from ${currentWarningCount} to ${warningCount}.`;
@@ -7788,7 +7949,7 @@ async function prepareGeometryForVectorExport(mask, vectorCircleHoles, requested
         postFitValidation: postFitValidationRecord(postFitValidation),
       },
     };
-    postFitValidation = state.validation;
+    postFitValidation = baselineValidation;
   } else {
     prepared.report = {
       ...prepared.report,
@@ -7819,14 +7980,13 @@ async function exportGeometry(kind) {
   // PNG is the deliberate exception: it may show unsafe work, so the file is
   // visibly watermarked and cannot be mistaken for released cut geometry.
   const mask = geometryForExport();
-  const vectorCircleHoles = availableVectorDotHoles();
   const previewCircleHoles = exactVectorDotHoles(mask);
   try {
     const units = el('export-units')?.value === 'in' ? 'in' : 'mm';
     const requestedRevision = state.revision;
     const vectorExport = kind === 'svg' || kind === 'dxf';
     const preparedGeometry = vectorExport
-      ? await prepareGeometryForVectorExport(mask, vectorCircleHoles, requestedRevision)
+      ? await prepareGeometryForVectorExport(requestedRevision)
       : null;
     if (vectorExport && !preparedGeometry) return;
     let blob;
@@ -9090,13 +9250,21 @@ function wire() {
   });
   el('export-units')?.addEventListener('change', updateReadouts);
   el('export-simplify')?.addEventListener('change', () => {
+    invalidateVectorPreview();
     updateVectorSimplificationUi();
+    draw();
     markDirty();
     pushHistory();
   });
-  el('curve-tolerance')?.addEventListener('input', () => updateVectorSimplificationUi());
-  el('curve-tolerance')?.addEventListener('change', () => {
+  el('curve-tolerance')?.addEventListener('input', () => {
+    invalidateVectorPreview();
     updateVectorSimplificationUi();
+    draw();
+  });
+  el('curve-tolerance')?.addEventListener('change', () => {
+    invalidateVectorPreview();
+    updateVectorSimplificationUi();
+    draw();
     markDirty();
     pushHistory();
   });
@@ -10376,9 +10544,13 @@ function wire() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       if (geometryJobs.active) geometryJobs.cancel('Processing cancelled while the app was hidden');
+      invalidateVectorPreview();
       flushLocalForLifecycle();
     } else if (navigator.onLine && state.projectId) {
       void syncWorkspaceProjects({ announce: false });
+      draw();
+    } else {
+      draw();
     }
   });
   window.addEventListener('pagehide', flushLocalForLifecycle);

@@ -62,7 +62,7 @@ export function executeGeometryJob(type, payload, report = () => {}) {
       baseMask: payload.baseMask ? encodeMask(payload.baseMask) : null,
     };
   }
-  if (type === "vector-prepare") {
+  if (type === "vector-prepare" || type === "vector-preview") {
     report("simplifying", "Preparing physical-tolerance vector contours…");
     const prepared = prepareVectorGeometry(
       payload.mask,
@@ -70,7 +70,11 @@ export function executeGeometryJob(type, payload, report = () => {}) {
       payload.exactCircleHoles,
       payload.options,
     );
+    // Draft previews fit the same paths without silently running a complete
+    // manufacturing review after every creative edit. Checked previews and
+    // cutting exports use vector-prepare and share its post-fit checks.
     const changesRasterResult = prepared.rasterMask !== payload.mask;
+    if (type === "vector-preview") return { prepared, changesRasterResult, postFitValidation: null };
     let postFitValidation = null;
     if (changesRasterResult) {
       report("checking", "Rasterizing the actual vector output and rechecking manufacturing constraints…");

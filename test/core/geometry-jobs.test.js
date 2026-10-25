@@ -70,6 +70,20 @@ test('vector preparation and post-fit manufacturing validation stay off-thread a
   assert.doesNotThrow(() => structuredClone(result));
 });
 
+test('draft vector previews share export fitting without running manufacturing review', () => {
+  const mask = maskFromAscii(['####', '####', '####', '####']);
+  const phases = [];
+  const result = executeGeometryJob('vector-preview', {
+    mask,
+    sheet: { widthMm: 4, heightMm: 4 },
+    options: { simplify: true, toleranceMm: 0.5 },
+  }, (phase) => phases.push(phase));
+  assert.equal(result.prepared.report.outputVertexCount, 4);
+  assert.equal(result.postFitValidation, null);
+  assert.deepEqual(phases, ['simplifying']);
+  assert.doesNotThrow(() => structuredClone(result));
+});
+
 test('background support planning returns a proposal and finished-connectivity check', () => {
   const mask = maskFromAscii(['#...#']);
   const result = executeGeometryJob('support', {

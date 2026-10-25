@@ -148,7 +148,7 @@ function syntheticProject() {
   }));
 }
 
-async function openEditor({ viewport = { width: 1280, height: 900 }, importProject = true } = {}) {
+async function openEditor({ viewport = { width: 1280, height: 900 }, importProject = true, projectText = null } = {}) {
   const invite = auth.createInvite('Browser interaction test');
   const context = await browser.newContext({ viewport, serviceWorkers: 'block', acceptDownloads: true });
   const page = await context.newPage();
@@ -175,7 +175,7 @@ async function openEditor({ viewport = { width: 1280, height: 900 }, importProje
     await page.locator('#file-input').setInputFiles({
       name: 'synthetic.stencil.json',
       mimeType: 'application/json',
-      buffer: Buffer.from(syntheticProject()),
+      buffer: Buffer.from(projectText ?? syntheticProject()),
     });
     await page.locator('[data-candidate-id="candidate-browser"]').waitFor({ state: 'attached', timeout: 10_000 }).catch(async (error) => {
       const status = await page.locator('#app-status').textContent().catch(() => 'missing status');
@@ -258,6 +258,147 @@ async function canvasChecksum(page) {
     return hash;
   });
 }
+
+function straightSlatProject() {
+  const project = JSON.parse(syntheticProject());
+  const mask = createMask(320, 240);
+  const angle = -55 * Math.PI / 180;
+  const sine = Math.sin(angle); const cosine = Math.cos(angle);
+  const centre = -sine * 160 + cosine * 120;
+  const halfWidth = (3 / 0.6 + 2 * (Math.abs(sine) + Math.abs(cosine))) / 2;
+  for (let y = 0; y < mask.height; y += 1) {
+    for (let x = 0; x < mask.width; x += 1) {
+      mask.data[y * mask.width + x] = Math.abs(-sine * (x + 0.5) + cosine * (y + 0.5) - centre) < halfWidth ? 1 : 0;
+    }
+  }
+  project.sheet = { widthMm: 192, heightMm: 144 };
+  project.raster = { sourceMask: encodeMask(mask), baseMask: encodeMask(mask) };
+  Object.assign(project.editor.controls, {
+    'panel-width': '192', 'panel-height': '144', 'min-web': '3', 'min-opening': '2',
+    kerf: '1.2', 'export-simplify': true, 'curve-tolerance': '0.85',
+  });
+  return JSON.stringify(project);
+}
+
+test('checked vector preview is identical to SVG export and updates when fitting is disabled', async () => {
+  const fixture = await openEditor({ projectText: straightSlatProject() });
+  const { page } = fixture;
+  try {
+    const paths = page.locator('#vector-cut-layer');
+    await paths.locator('path').waitFor();
+    assert.equal(await paths.getAttribute('data-checked'), 'false');
+    assert.equal(await page.locator('#geometry-preview-state-label').textContent(), 'Vector draft');
+    assert.equal(await page.locator('#editor-canvas').evaluate((canvas) => getComputedStyle(canvas).visibility), 'hidden');
+
+    await page.getByRole('tab', { name: /Validate/ }).click();
+    await page.locator('#btn-validate').click();
+    await page.locator('#vector-cut-layer[data-checked="true"]:not([hidden])').waitFor({ timeout: 15_000 });
+    const checkedPath = await paths.locator('path').getAttribute('d');
+    const vertices = Number(await paths.getAttribute('data-vertices'));
+    assert.ok(vertices <= 12, `straight slat should have a few vertices, got ${vertices}`);
+    assert.equal(await page.locator('#geometry-preview-state-label').textContent(), 'Export path preview');
+    await page.locator('#btn-zoom-reset').click();
+    for (let step = 0; step < 4; step += 1) await page.locator('#btn-zoom-in').click();
+    assert.equal(await paths.locator('path').getAttribute('d'), checkedPath, 'zoom must preserve the exported geometry');
+
+    await page.getByRole('tab', { name: /Export/ }).click();
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#btn-export-svg').click();
+    const download = await downloadPromise;
+    const svg = fs.readFileSync(await download.path(), 'utf8');
+    const exportedPath = await page.evaluate((xml) => new DOMParser().parseFromString(xml, 'image/svg+xml')
+      .querySelector('[data-stencil-role="retained-material"]').getAttribute('d'), svg);
+    assert.equal(exportedPath, checkedPath, 'preview and SVG must use the exact same fitted path commands');
+
+    const dxfPromise = page.waitForEvent('download');
+    await page.locator('#btn-export-dxf').click();
+    const dxfDownload = await dxfPromise;
+    const dxf = fs.readFileSync(await dxfDownload.path(), 'utf8').trim().split('\n');
+    const dxfPoints = [];
+    for (let index = 0; index < dxf.length - 1; index += 2) {
+      if (dxf[index] !== '0' || dxf[index + 1] !== 'VERTEX') continue;
+      const point = {};
+      for (let field = index + 2; field < dxf.length && dxf[field] !== '0'; field += 2) {
+        if (dxf[field] === '10') point.x = Number(dxf[field + 1]);
+        if (dxf[field] === '20') point.y = 144 - Number(dxf[field + 1]);
+      }
+      dxfPoints.push(point);
+    }
+    const previewPoints = [...checkedPath.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)]
+      .map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+    assert.equal(dxfPoints.length, previewPoints.length);
+    for (let index = 0; index < previewPoints.length; index += 1) {
+      assert.ok(Math.hypot(dxfPoints[index].x - previewPoints[index].x, dxfPoints[index].y - previewPoints[index].y) < 0.000002,
+        'DXF must contain the displayed vertices with its Y-axis conversion');
+    }
+
+    await page.locator('#export-simplify').uncheck();
+    await page.locator('#vector-cut-layer[data-checked="true"]:not([hidden])').waitFor();
+    const exactPath = await paths.locator('path').getAttribute('d');
+    assert.notEqual(exactPath, checkedPath);
+    assert.ok(Number(await paths.getAttribute('data-vertices')) > vertices * 20);
+
+    await page.getByRole('button', { name: 'Back-lit', exact: true }).click();
+    assert.equal(await paths.locator('path').getAttribute('d'), exactPath, 'changing lighting must preserve cutting geometry');
+    assert.equal(await paths.locator('path').getAttribute('fill'), '#141c21');
+    await page.getByRole('button', { name: 'Artwork', exact: true }).click();
+    assert.equal(await paths.getAttribute('hidden'), '', 'raw artwork view must not retain the export overlay');
+    assert.equal(await page.locator('#editor-canvas').evaluate((canvas) => getComputedStyle(canvas).visibility), 'visible');
+
+    await page.getByRole('button', { name: 'Material', exact: true }).click();
+    const beforeEditKey = await paths.getAttribute('data-key');
+    await page.getByRole('tab', { name: /Panel/ }).click();
+    await page.locator('#panel-width').fill('194');
+    await page.locator('#panel-width').press('Tab');
+    await page.locator('#vector-cut-layer[data-checked="false"]:not([hidden])').waitFor();
+    assert.notEqual(await paths.getAttribute('data-key'), beforeEditKey, 'geometry edits must discard the checked paths');
+    assert.equal(await page.locator('#btn-export-svg').isDisabled(), true);
+    assert.equal(await page.locator('#geometry-preview-state-label').textContent(), 'Vector draft');
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('a rejected fit shows the same exact fallback contours that SVG exports', async () => {
+  const fixture = await openEditor({ projectText: straightSlatProject() });
+  const { page } = fixture;
+  try {
+    await page.locator('#vector-cut-layer:not([hidden]) path').waitFor();
+    // Inject a manufacturing failure at the worker boundary: the display
+    // must fall back together with export, never show an unexportable fit.
+    await page.route('**/workers/geometry.js', (route) => route.fulfill({
+      contentType: 'application/javascript',
+      body: `import { executeGeometryJob } from '/core/geometry-jobs.js';
+        self.onmessage = ({ data: { id, type, payload } }) => {
+          const value = executeGeometryJob(type, payload);
+          if (type === 'vector-prepare' && value.changesRasterResult) {
+            value.postFitValidation = { valid: false, issues: [
+              { code: 'SYNTHETIC_POST_FIT_ERROR', severity: 'error', details: {} }
+            ] };
+          }
+          self.postMessage({ id, kind: 'result', result: { value, durationMs: 0 } });
+        };`,
+    }));
+    await page.getByRole('tab', { name: /Validate/ }).click();
+    await page.locator('#btn-validate').click();
+    await page.locator('#vector-cut-layer[data-checked="true"]:not([hidden])').waitFor({ timeout: 15_000 });
+    assert.equal(await page.locator('#vector-simplification-status').getAttribute('data-state'), 'fallback');
+    assert.match(await page.locator('#geometry-preview-state-copy').textContent(), /fallback/);
+    const fallbackPath = await page.locator('#vector-cut-layer path').getAttribute('d');
+    assert.ok(Number(await page.locator('#vector-cut-layer').getAttribute('data-vertices')) > 200);
+
+    await page.getByRole('tab', { name: /Export/ }).click();
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#btn-export-svg').click();
+    const download = await downloadPromise;
+    const svg = fs.readFileSync(await download.path(), 'utf8');
+    const pathData = await page.evaluate((xml) => new DOMParser().parseFromString(xml, 'image/svg+xml')
+      .querySelector('[data-stencil-role="retained-material"]').getAttribute('d'), svg);
+    assert.equal(pathData, fallbackPath);
+  } finally {
+    await fixture.close();
+  }
+});
 
 test('candidate restoration applies the saved recipe and redraws its geometry', async () => {
   const fixture = await openEditor();

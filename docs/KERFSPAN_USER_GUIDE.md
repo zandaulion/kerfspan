@@ -32,6 +32,8 @@ This separation is why changing a photograph does not permanently bake in a repa
 
 Processing a style is not the same as validating it. The canvas distinguishes a provisional preview from processed geometry; only a successful, current validation can enable manufacturing vector export.
 
+**Material**, **Back-lit**, and **Problems** display vector cutting paths that remain sharp when zoomed. **Vector draft** means the fitted paths still need manufacturing checks. After **Run all checks**, **Export path preview** uses the same prepared geometry as SVG/DXF downloads, including any exact-contour safety fallback. Changes to artwork or export settings discard the old paths. Repair proposals and legacy finished-part simulations are labelled separately.
+
 ## 2. Quick start
 
 1. In **Prepare**, import a PNG, JPEG, or WebP image. A prepared black-and-white drawing can use **Line art**; a photograph can use any photographic style.
