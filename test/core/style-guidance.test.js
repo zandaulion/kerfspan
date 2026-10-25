@@ -62,7 +62,7 @@ test('strict or legacy manufacturing contracts raise the recommendation floor', 
   assert.equal(strict.controls['style-dot-pitch'], 14);
   assert.equal(strict.controls['style-dot-max'], 8);
   assert.equal(legacy.drawnWebMm, 4.2);
-  assert.equal(legacy.controls['style-pitch'], 10.5);
+  assert.equal(legacy.controls['style-pitch'], 8.5);
 });
 
 test('guidance leaves non-dimensional creative styles alone', () => {

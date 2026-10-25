@@ -256,8 +256,7 @@ async def analizeaza(
             punte_min_mm, kerf_mm, interpretare_geometrie
         )
         if stil == "lamele":
-            punte_min_mm = max(punte_min_mm, punte_pentru_interpretare(3.0, kerf_mm, interpretare_geometrie))
-            fanta_min_mm = max(3.0, fanta_min_mm)
+            fanta_min_mm = max(kerf_mm, fanta_min_mm)
             if latime_lumina_lamele_mm is not None:
                 latime_lumina_lamele_mm = max(punte_min_mm, punte_pentru_interpretare(
                     latime_lumina_lamele_mm, kerf_mm, interpretare_geometrie

@@ -36,24 +36,32 @@ def render_slats(**overrides):
 
 
 class TestSlatManufacturingFloor(unittest.TestCase):
-    def test_slats_raise_both_features_and_light_override_to_three_mm(self):
+    def test_slats_use_profile_limits_below_three_mm_and_clamp_light_width(self):
         result = render_slats()
         pattern = result['info']['slatHighlights']['pattern']
-        self.assertAlmostEqual(pattern['minimumWeb'] * 300, 3)
-        self.assertAlmostEqual(pattern['minimumOpening'] * 300, 3)
-        self.assertEqual(result['sourceMask'], render_slats(latime_lumina_lamele_mm=3)['sourceMask'])
+        self.assertAlmostEqual(pattern['minimumWeb'] * 300, 2)
+        self.assertAlmostEqual(pattern['minimumOpening'] * 300, 2)
+        self.assertEqual(result['sourceMask'], render_slats(latime_lumina_lamele_mm=2)['sourceMask'])
 
     def test_larger_profile_limits_and_legacy_kerf_allowance_survive(self):
         strict = render_slats(punte_min_mm=4, fanta_min_mm=5)
         self.assertAlmostEqual(strict['info']['slatHighlights']['pattern']['minimumWeb'] * 300, 4)
         self.assertAlmostEqual(strict['info']['slatHighlights']['pattern']['minimumOpening'] * 300, 5)
         legacy = render_slats(interpretare_geometrie='legacy-uncompensated-centerline-v1')
-        self.assertAlmostEqual(legacy['info']['slatHighlights']['pattern']['minimumWeb'] * 300, 4.2)
-        self.assertAlmostEqual(legacy['info']['slatHighlights']['pattern']['minimumOpening'] * 300, 3)
+        self.assertAlmostEqual(legacy['info']['slatHighlights']['pattern']['minimumWeb'] * 300, 3.2)
+        self.assertAlmostEqual(legacy['info']['slatHighlights']['pattern']['minimumOpening'] * 300, 2)
+
+    def test_web_and_opening_limits_are_independent_and_openings_allow_for_kerf(self):
+        result = render_slats(punte_min_mm=3, fanta_min_mm=2)
+        pattern = result['info']['slatHighlights']['pattern']
+        self.assertAlmostEqual(pattern['minimumWeb'] * 300, 3)
+        self.assertAlmostEqual(pattern['minimumOpening'] * 300, 2)
+        wide_tool = render_slats(kerf_mm=2.5)
+        self.assertAlmostEqual(wide_tool['info']['slatHighlights']['pattern']['minimumOpening'] * 300, 2.5)
 
     def test_resolution_tracks_the_smallest_manufacturable_slat_feature(self):
         result = render_slats(coala_lat_mm=600)
-        self.assertEqual(result['sourceMask']['width'], 1600)
+        self.assertEqual(result['sourceMask']['width'], 2400)
 
 
 if __name__ == '__main__':

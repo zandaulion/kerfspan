@@ -360,20 +360,23 @@ function repairHighlightProject() {
   return JSON.stringify(project);
 }
 
-test('Slats generation enforces the final 3 mm floor before validation and export', async () => {
+for (const minimum of [3, 2]) {
+test(`Slats generation enforces the configured ${minimum} mm profile before validation and export`, async () => {
   const project = JSON.parse(syntheticProject());
   const { mask, sheet, highlights } = unsafeSlatFixture();
+  highlights.pattern.minimumWeb = minimum / sheet.widthMm;
+  highlights.pattern.minimumOpening = minimum / sheet.widthMm;
   project.sheet = sheet;
   project.frame = { enabled: true, thicknessMm: 6, insetMm: 0, sides: { top: true, right: true, bottom: true, left: true } };
-  project.manufacturing.minimumWebMm = 3;
-  project.manufacturing.minimumOpeningMm = 3;
-  project.manufacturing.profile.limits.minimumWebMm = 3;
-  project.manufacturing.profile.limits.minimumOpeningMm = 3;
+  project.manufacturing.minimumWebMm = minimum;
+  project.manufacturing.minimumOpeningMm = minimum;
+  project.manufacturing.profile.limits.minimumWebMm = minimum;
+  project.manufacturing.profile.limits.minimumOpeningMm = minimum;
   project.raster = { sourceMask: encodeMask(mask), baseMask: encodeMask(mask) };
   project.editor.slatHighlights = highlights;
   Object.assign(project.editor.controls, { cutStyle: 'lamele', 'panel-width': '120', 'panel-height': '80',
     'frame-width': '6', anchorEdge: ['top', 'right', 'bottom', 'left'], 'style-pitch': '10',
-    'min-web': '3', 'min-opening': '3', 'export-simplify': false, 'stabilize-slats': false, 'stabilizer-version': '2' });
+    'min-web': String(minimum), 'min-opening': String(minimum), 'export-simplify': false, 'stabilize-slats': false, 'stabilizer-version': '2' });
   const fixture = await openEditor({ projectText: JSON.stringify(project) });
   const { page } = fixture;
   try {
@@ -400,11 +403,12 @@ test('Slats generation enforces the final 3 mm floor before validation and expor
     await page.getByRole('tab', { name: /Validate/ }).click();
     await page.locator('#btn-validate').click();
     assert.equal(await page.locator('#btn-export-svg').isDisabled(), true,
-      'shrinking below the 3 mm generation floor must keep the draft editable and block cutting export');
+      'shrinking below the configured profile must keep the draft editable and block cutting export');
   } finally {
     await fixture.close();
   }
 });
+}
 
 test('regenerating a no-change Slats repair preview keeps the same straight paths and blocker count', async () => {
   const fixture = await openEditor({ projectText: repairHighlightProject() });

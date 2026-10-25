@@ -66,7 +66,7 @@ export function placeSlatHighlights(input, sourceSize, bounds, placement) {
 
 /** Enforce continuous minimum-width bands on the final manufacturing grid. */
 export function enforceSlatMinimumWidths(mask, sheet, guide, {
-  minimumWebMm = 3, minimumOpeningMm = 3, frame = { enabled: false },
+  minimumWebMm, minimumOpeningMm, frame = { enabled: false },
 } = {}) {
   assertMask(mask);
   assertSheet(sheet);
@@ -76,8 +76,11 @@ export function enforceSlatMinimumWidths(mask, sheet, guide, {
   const nx = -Math.sin(angle); const ny = Math.cos(angle);
   const pixelX = sheet.widthMm / mask.width; const pixelY = sheet.heightMm / mask.height;
   const cellAcross = Math.abs(nx) * pixelX + Math.abs(ny) * pixelY;
-  const web = Math.max(minimumWebMm, pattern.minimumWebMm);
-  const opening = Math.max(minimumOpeningMm, pattern.minimumOpeningMm);
+  const web = minimumWebMm ?? pattern.minimumWebMm;
+  const opening = minimumOpeningMm ?? pattern.minimumOpeningMm;
+  if (![web, opening].every((value) => Number.isFinite(value) && value > 0)) {
+    throw new RangeError('Slats require positive finite minimum metal and opening widths.');
+  }
   if (pattern.pitchMm + 1e-9 < web + opening + 3 * cellAcross) {
     const error = new RangeError('Slats need a wider bar pitch to preserve the minimum metal and cut widths at this resolution.');
     error.code = 'SLAT_PITCH_TOO_SMALL';

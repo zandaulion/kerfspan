@@ -73,8 +73,8 @@ export function recommendStyleSettings(style, {
   finitePositive(minimumWebMm, 'minimum web');
 
   const shortEdgeMm = Math.min(widthMm, heightMm);
-  const openingMm = requiredOpeningMm(Math.max(style === 'lamele' ? 3 : 0, minimumOpeningMm), kerfMm);
-  const drawnWebMm = rasterWebWidthMm(Math.max(style === 'lamele' ? 3 : 0, minimumWebMm), kerfMm, geometryInterpretation);
+  const openingMm = requiredOpeningMm(minimumOpeningMm, kerfMm);
+  const drawnWebMm = rasterWebWidthMm(minimumWebMm, kerfMm, geometryInterpretation);
   // Leave room for one opening, one finished web, and a second tone band. This
   // is the same feasibility floor enforced before the server renders a style.
   const minimumCycleMm = drawnWebMm + openingMm + Math.max(openingMm, drawnWebMm / 2);

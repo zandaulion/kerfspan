@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildDesignMask, enforceSlatMinimumWidths, prepareVectorGeometry,
   validateDesign, countValidationLocations, normalizeSlatHighlights, placeSlatHighlights,
-  createProject, serializeProject, deserializeProject } from '../../web/core/index.js';
+  createProject, serializeProject, deserializeProject, placeMaskOnSheet } from '../../web/core/index.js';
 import { unsafeSlatFixture } from './fixtures.js';
 
 test('Slats enforce 3 mm metal and openings on the final grid at every orientation', () => {
@@ -51,6 +51,35 @@ test('Slats manufacturing metadata follows crop and rotation and survives projec
   assert.equal(placed.angleDeg, 35);
   assert.deepEqual(placed.pattern.origin, { x: 50, y: 15 });
   assert.throws(() => normalizeSlatHighlights({ ...source, pattern: { ...source.pattern, pitch: NaN } }), /Invalid slat manufacturing/);
+});
+
+test('Slats use separate profile widths below 3 mm without a hidden generator floor', () => {
+  for (const minimumWebMm of [2, 3]) {
+    const { mask: source, sheet, guide } = unsafeSlatFixture();
+    const mask = placeMaskOnSheet(source, sheet, { longEdgePx: 480, frame: { enabled: false }, fitToFrame: false }).mask;
+    const frame = { enabled: true, thicknessMm: 6 };
+    guide.pattern.minimumWebMm = minimumWebMm;
+    guide.pattern.minimumOpeningMm = 2;
+    const safe = enforceSlatMinimumWidths(mask, sheet, guide, { frame });
+    const explicit = enforceSlatMinimumWidths(mask, sheet, guide, { minimumWebMm, minimumOpeningMm: 2, frame });
+    assert.deepEqual(safe.data, explicit.data, 'omitting overrides must use the stored profile limits');
+    guide.pattern.minimumWebMm = 3;
+    guide.pattern.minimumOpeningMm = 3;
+    assert.deepEqual(enforceSlatMinimumWidths(mask, sheet, guide, { minimumWebMm, minimumOpeningMm: 2, frame }).data, safe.data,
+      'the current profile must override limits from an older saved render');
+    const built = buildDesignMask(safe, { sheet, frame, bridges: [] }).mask;
+    const options = { sheet, minimumWebMm, minimumOpeningMm: 2, kerfMm: 1.2,
+      geometryInterpretation: 'finished-boundary-cam-v1', requireSingleComponent: true,
+      requireAnchored: false, anchorBoundary: false };
+    const validation = validateDesign(built, options);
+    assert.equal(countValidationLocations(validation, 'error'), 0);
+    assert.equal(validation.minimumWebCore.componentCount, 1);
+    if (minimumWebMm === 2) {
+      const stricter = validateDesign(built, { ...options, minimumWebMm: 3 });
+      assert.ok(stricter.errors.some((issue) => issue.code === 'MIN_CUT_GAP'),
+        'the 2 mm profile must allow narrower metal than a hardcoded 3 mm floor');
+    }
+  }
 });
 
 test('too little pitch is rejected instead of generating overlapping minimum-width bands', () => {

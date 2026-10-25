@@ -1004,9 +1004,9 @@ function rebuildSource() {
     try {
       mask = enforceSlatMinimumWidths(mask, currentSheet, state.placedSlatHighlights, {
         frame: frameConfig(),
-        minimumWebMm: rasterWebWidthMm(Math.max(3, toMm(numberField('min-web', 3))),
+        minimumWebMm: rasterWebWidthMm(toMm(numberField('min-web', 3)),
           toMm(numberField('kerf', 1.2)), state.geometryInterpretation),
-        minimumOpeningMm: Math.max(3, toMm(numberField('min-opening', 2)), toMm(numberField('kerf', 1.2))),
+        minimumOpeningMm: Math.max(toMm(numberField('min-opening', 2)), toMm(numberField('kerf', 1.2))),
       });
     } catch (error) {
       if (error.code !== 'SLAT_PITCH_TOO_SMALL') throw error;
@@ -1163,11 +1163,11 @@ function enforceStyleSpacing() {
   const style = document.querySelector('input[name="cutStyle"]:checked')?.value || 'sablon';
   const kerf = toMm(numberField('kerf', 1.2));
   const web = rasterWebWidthMm(
-    Math.max(style === 'lamele' ? 3 : 0, toMm(numberField('min-web', 3))),
+    toMm(numberField('min-web', 3)),
     kerf,
     state.geometryInterpretation,
   );
-  const slot = Math.max(style === 'lamele' ? 3 : 0, kerf, toMm(numberField('min-opening', 2)));
+  const slot = Math.max(kerf, toMm(numberField('min-opening', 2)));
   // Merely fitting one minimum web beside one minimum opening leaves no range
   // in which tone can change the geometry. Reserve one additional detail band
   // so the lightest and darkest parts of a photograph cannot become identical.
@@ -1176,7 +1176,7 @@ function enforceStyleSpacing() {
 
   const lightWidth = style === 'lamele' ? el('style-slat-light-width') : null;
   if (lightWidth) {
-    const minimum = fromMm(Math.max(3, toMm(numberField('min-web', 3))));
+    const minimum = numberField('min-web', fromMm(3));
     lightWidth.min = String(roundUnit(minimum));
     if (lightWidth.value !== '' && Number(lightWidth.value) < minimum) {
       lightWidth.value = String(roundUnit(minimum));
@@ -4033,7 +4033,7 @@ function updateReadouts() {
   for (const node of all('[data-unit-label]')) node.textContent = state.unit;
   const lightWidth = el('style-slat-light-width');
   if (lightWidth) {
-    lightWidth.min = String(roundUnit(fromMm(Math.max(3, toMm(numberField('min-web', 3))))));
+    lightWidth.min = String(roundUnit(numberField('min-web', fromMm(3))));
     lightWidth.max = String(roundUnit(fromMm(40)));
     lightWidth.step = state.unit === 'in' ? '0.001' : '0.1';
   }
