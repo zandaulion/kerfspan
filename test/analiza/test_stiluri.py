@@ -216,8 +216,7 @@ class TestLamele(unittest.TestCase):
                 margin = (across_size - count * pitch) / 2
                 across = -sine * (xx + 0.5) + cosine * (yy + 0.5) - low
                 bar = np.clip(np.floor((across - margin) / pitch), 0, count - 1)
-                reserved_web = web + 2 * (abs(sine) + abs(cosine))
-                expected = np.abs(across - (margin + (bar + 0.5) * pitch)) < reserved_web / 2
+                expected = np.abs(across - (margin + (bar + 0.5) * pitch)) < web / 2
                 actual = lamele(camp_uniform(height, width, 0), MM_PE_PX,
                                 pas_mm=13.7, punte_min_mm=2.3, fanta_min_mm=3,
                                 unghi=angle)
@@ -231,10 +230,31 @@ class TestLamele(unittest.TestCase):
         self.assertTrue(np.all(dark[light]), "darkening must preserve the minimum web")
         self.assertGreater(dark.sum(), light.sum() * 2)
 
-    def test_diagonal_pitch_reserves_room_for_both_raster_edges(self):
-        with self.assertRaisesRegex(ReglajImposibil, "pixel-rounded edges"):
-            lamele(camp_uniform(100, 100, 0), MM_PE_PX,
-                   pas_mm=5, punte_min_mm=2, fanta_min_mm=3, unghi=-55)
+    def test_highlight_guidance_does_not_change_shadow_or_highlight_widths(self):
+        camp = camp_uniform(240, 320, 0)
+        camp[120:] = 0.9
+        config = dict(pas_mm=13.7, punte_min_mm=2.3, fanta_min_mm=3, unghi=-55)
+        original = lamele(camp, MM_PE_PX, **config)
+        mask, regions = lamele(camp, MM_PE_PX, returneaza_geometrie=True, **config)
+        np.testing.assert_array_equal(mask, original)
+        self.assertGreater(len(regions), 0)
+        self.assertTrue(all(len(region) == 8 for region in regions))
+        # Regions mark the pale half only; no shadow simplification authority.
+        self.assertTrue(all(max(region[1::2]) < 0.60 for region in regions))
+
+    def test_original_full_darkness_keeps_the_full_width_range(self):
+        camp = camp_uniform(200, 400, 1)
+        mask = lamele(camp, MM_PE_PX, pas_mm=10, punte_min_mm=2, fanta_min_mm=3)
+        self.assertTrue(all(width == 14 for width in secvente_pe_rand(mask, 100)))
+        diagonal = lamele(camp, MM_PE_PX, pas_mm=13.7, punte_min_mm=2.3,
+                          fanta_min_mm=3, unghi=-55)
+        # A 10.7 mm dark bar crosses a horizontal row at 10.7 / sin(55°).
+        # The former raster reserve compressed it to roughly 11 mm instead.
+        interior = diagonal[80:120, 80:320]
+        self.assertGreaterEqual(max(secvente_pe_rand(interior, 20)), 26)
+        _, regions = lamele(camp, MM_PE_PX, pas_mm=13.7, punte_min_mm=2.3,
+                            fanta_min_mm=3, unghi=-55, returneaza_geometrie=True)
+        self.assertEqual(regions, [], "rotation padding must never grant permission to straighten shadows")
 
 
 class TestRezolutie(unittest.TestCase):

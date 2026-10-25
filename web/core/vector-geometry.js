@@ -2,10 +2,11 @@ import { createMask, REMOVED, RETAINED, assertMask, assertSheet } from './mask.j
 import { traceMaskContours } from './svg.js';
 import { separateCircleContours } from './vector-dots.js';
 import { countValidationLocations, issueLocationCount } from './validation.js';
+import { straightenSlatHighlightContours } from './slat-highlights.js';
 
 const EPSILON = 1e-9;
 
-export const VECTOR_SIMPLIFICATION_MODEL_VERSION = 1;
+export const VECTOR_SIMPLIFICATION_MODEL_VERSION = 2;
 
 export function vectorManufacturingValidationRegressed(baseline, candidate) {
   if (!candidate?.valid || countValidationLocations(candidate, 'error') > 0) return true;
@@ -394,6 +395,32 @@ export function prepareVectorGeometry(mask, sheet, exactCircleHoles = [], option
       ...report,
     },
   });
+  if (options.slatHighlights && options.simplify !== true) {
+    const fit = straightenSlatHighlightContours(source.contours, mask, sheet, options.slatHighlights);
+    const report = {
+      requested: true,
+      mode: 'slat-highlights',
+      requestedToleranceMm: fit.toleranceMm,
+      highlightRunCount: fit.replacedRuns,
+    };
+    if (!fit.replacedRuns) return exact({ ...report, status: 'unchanged' });
+    const validation = validateVectorGeometry(source.contours, fit.contours, mask, sheet,
+      source.matchedCircles, fit.toleranceMm);
+    if (!validation.valid) return exact({ ...report, status: 'fallback',
+      fallbackReason: validation.errors[0], topologyValidated: false });
+    return {
+      contours: fit.contours,
+      matchedCircles: source.matchedCircles,
+      exactRasterContours,
+      rasterMask: rasterizeVectorGeometry(fit.contours, source.matchedCircles, mask, sheet),
+      report: {
+        ...exact().report, ...report, status: 'simplified',
+        appliedToleranceMm: fit.toleranceMm,
+        outputVertexCount: fit.contours.reduce((sum, contour) => sum + contour.length, 0),
+        maximumDeviationMm: validation.maximumDeviationMm,
+      },
+    };
+  }
   if (options.simplify !== true) return exact();
   const requestedToleranceMm = Number(options.toleranceMm);
   if (!Number.isFinite(requestedToleranceMm) || requestedToleranceMm <= 0) {

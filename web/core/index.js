@@ -27,6 +27,7 @@ export {
 export { averageTone, toneFromImageData } from "./tone.js";
 export { applySubjectMask, subjectMask } from "./subject.js";
 export { slatMask } from "./styles/slats.js";
+export { normalizeSlatHighlights, placeSlatHighlights } from "./slat-highlights.js";
 export { hatchMask } from "./styles/hatch.js";
 export { analyzeConnectivity, findUnsupportedComponents } from "./connectivity.js";
 export { applyCapsuleBridge, applyCapsuleBridges, validateBridge } from "./bridges.js";

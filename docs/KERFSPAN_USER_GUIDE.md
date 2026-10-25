@@ -72,6 +72,8 @@ Processing a style is not the same as validating it. The canvas distinguishes a 
 |  | **Variable dots** | Circular openings sized by local light. Layouts: a fixed staggered grid; a nested grid whose pitch changes in halving steps; or stipple, with freely spaced dots. The variable layouts use a light-area and a dark-area pitch: a larger dark-area pitch gives dense light and sparse shadows, a smaller one the reverse. |
 | Decorative | **Ornamental symmetry** | Mirrored linework for a balanced motif. |
 
+**Slats** use the original tone-to-width range in both light and shadow. Automatic straightening is limited to long, nearly straight contour runs inside light regions identified by the generator. Shadow contour points and fine tonal variation remain unchanged. Whole-contour simplification stays off by default; enabling it in Export is a separate choice that can reduce detail throughout the image.
+
 The recommendation panel converts the current panel size and manufacturing limits into an explicit starting point. If Kerfspan clamps a pitch, width, or diameter to preserve a configured limit, it explains the adjustment beside the affected control. Recommendations remain creative starting points, not machine certification.
 
 ### Tone adjustments
@@ -230,7 +232,7 @@ Processing failures stay visible with **Retry** and **Dismiss** instead of disap
 
 Before sending geometry to the machine, confirm units, stock size/orientation, material polarity, frame, profile evidence, scale, duplicate contours, lead-ins, cut order, heat strategy, fixturing, and one—and only one—CAM kerf compensation step. Use a coupon or reduced-risk test for a new setup.
 
-The release record makes an export identifiable and tamper-evident; it is not a machining certificate. With simplification off—or after a safety fallback—SVG/DXF contours follow grid-aligned raster boundaries except for validated Variable Dot circle primitives. Simplification produces straight polyline segments within the stated error bound, not Bézier curves or a smoother source image. Target-CAM import and physical acceptance remain necessary.
+The release record makes an export identifiable and tamper-evident; it is not a machining certificate. With whole-contour simplification off, SVG/DXF preserves the raster boundaries except for validated Variable Dot circles and Slats' light-run straightening. A safety fallback retains the exact contours. Straightening produces polyline segments within the recorded error bound, not Bézier curves. Target-CAM import and physical acceptance remain necessary.
 
 ## 9. Projects, autosave, and recovery
 

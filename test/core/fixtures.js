@@ -1,4 +1,5 @@
 import { RETAINED, createMask } from "../../web/core/mask.js";
+import { placeSlatHighlights } from "../../web/core/slat-highlights.js";
 
 /**
  * Creates a semantic mask from readable rows. `#` is retained material and
@@ -44,4 +45,31 @@ export function rgbaFixture(pixels) {
   const data = new Uint8ClampedArray(pixels.length * 4);
   pixels.forEach((pixel, index) => data.set(pixel, index * 4));
   return { width: pixels.length, height: 1, data };
+}
+
+export function mixedSlatFixture() {
+  const mask = createMask(320, 240);
+  const sheet = { widthMm: 192, heightMm: 144 };
+  const angle = -55 * Math.PI / 180;
+  const cosine = Math.cos(angle); const sine = Math.sin(angle);
+  const along = (x, y) => cosine * (x - 96) + sine * (y - 72);
+  for (let y = 0; y < mask.height; y += 1) {
+    for (let x = 0; x < mask.width; x += 1) {
+      const px = (x + 0.5) * 0.6; const py = (y + 0.5) * 0.6;
+      const t = along(px, py);
+      const across = -sine * (px - 96) + cosine * (py - 72);
+      const width = t < -10 ? 3 : 9 + 1.5 * Math.sin(t * 1.3) + 0.5 * Math.cos(t * 3);
+      const frame = x < 12 || y < 12 || x >= mask.width - 12 || y >= mask.height - 12;
+      mask.data[y * mask.width + x] = frame || Math.abs(across) < width / 2 ? 1 : 0;
+    }
+  }
+  const region = [];
+  for (const [across, t] of [[-20, -150], [20, -150], [20, -12], [-20, -12]]) {
+    region.push((96 - sine * across + cosine * t) / 192, (72 + cosine * across + sine * t) / 144);
+  }
+  const highlights = { version: 1, coordinateSpace: 'normalized-source', angleDeg: -55, regions: [region] };
+  const placed = placeSlatHighlights(highlights, { width: 320, height: 240 },
+    { x: 0, y: 0, width: 320, height: 240 },
+    { xMm: 0, yMm: 0, widthMm: 192, heightMm: 144, rotationDeg: 0 });
+  return { mask, sheet, highlights, placed, along };
 }

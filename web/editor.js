@@ -56,9 +56,11 @@ import {
   physicalStrokeIndices,
   normalizeCuttingProfile,
   normalizeVectorDots,
+  normalizeSlatHighlights,
   intactCircleHoles,
   nextIssueReviewTarget,
   placeVectorDots,
+  placeSlatHighlights,
   placeMaskOnSheet,
   pointFromArtworkPlacement,
   serializeProject,
@@ -239,6 +241,8 @@ const state = {
   styleMaskFresh: false, // false while controls have changed or a refinement is pending
   vectorDots: null,      // exact source-space circles for Variable Dots
   placedVectorDots: [],  // the same circles after crop and panel placement, in mm
+  slatHighlights: null,  // source-space light runs; shadow contours are protected
+  placedSlatHighlights: null,
   tonePreviewCanvas: null, // exact server interpretation before pattern generation
   tonePreviewFor: null,
   toneStatistics: null,
@@ -902,6 +906,11 @@ function exactVectorDotHoles(mask) {
   return intactCircleHoles(availableVectorDotHoles(), mask, sheet());
 }
 
+function availableSlatHighlights() {
+  return selectedCutStyle() === 'lamele' && (!state.source || state.styleMaskFresh)
+    ? state.placedSlatHighlights : null;
+}
+
 function remapPaintedSet(indices, fromKey, toWidth, toHeight) {
   const match = /^(\d+)x(\d+)$/.exec(fromKey || '');
   if (!match) return new Set();
@@ -930,6 +939,7 @@ function rebuildSource() {
     state.sourceMask = null;
     state.baseMask = null;
     state.placedVectorDots = [];
+    state.placedSlatHighlights = null;
     return;
   } else if (state.source) {
     const threshold = Math.round((numberField('threshold', 50) / 100) * 255);
@@ -951,6 +961,7 @@ function rebuildSource() {
     state.contentBounds = null;
     state.contentSourceSize = null;
     state.placedVectorDots = [];
+    state.placedSlatHighlights = null;
     return;
   }
 
@@ -982,6 +993,9 @@ function rebuildSource() {
   state.placedVectorDots = selectedCutStyle() === 'puncte' && state.vectorDots
     ? placeVectorDots(state.vectorDots, state.contentSourceSize, state.contentBounds, state.placement)
     : [];
+  state.placedSlatHighlights = selectedCutStyle() === 'lamele' && state.slatHighlights
+    ? placeSlatHighlights(state.slatHighlights, state.contentSourceSize, state.contentBounds, state.placement)
+    : null;
 
   // Touch-ups last, so a deliberate correction is never undone by a slider.
   // Legacy raster paint is remapped when resolution changes; ordered stroke
@@ -1385,7 +1399,9 @@ function updateGeometryPreviewState() {
       ? vectorPreview.prepared.report.status === 'fallback'
         ? 'Shows the exact contours retained by the export safety fallback.'
         : 'Shows the same paths used for SVG and DXF. Review any remaining issues before export.'
-      : 'Fitted cutting paths. Run all checks to confirm the final export geometry.';
+      : state.validation && state.validatedRevision === state.revision && !state.validation.valid
+        ? 'Fitted cutting paths. Resolve the blocking findings before confirming export geometry.'
+        : 'Fitted cutting paths. Run all checks to confirm the final export geometry.';
     return;
   }
   if (['material', 'backlit', 'issues'].includes(state.view) && !state.touchupLive) {
@@ -1702,6 +1718,8 @@ async function renderStyle() {
     state.vectorDots = requestedStyle === 'puncte'
       ? normalizeVectorDots(payload.info?.vectorDots)
       : null;
+    state.slatHighlights = requestedStyle === 'lamele'
+      ? normalizeSlatHighlights(payload.info?.slatHighlights) : null;
     state.tonePreviewCanvas = decodedTone;
     state.tonePreviewFor = decodedTone ? requestedStyle : null;
     state.toneStatistics = payload.tonePreview?.statistics ?? null;
@@ -1726,17 +1744,10 @@ async function renderStyle() {
     setStyleStatus(`Rendered · ${Math.round(payload.info.material * 100)}% material`);
     refresh({ immediate: true });
     if (requestedStyle === 'lamele' && state.designMask) {
-      // A tolerance below one raster cell leaves diagonal staircases intact.
-      // Slats start with guarded fitting at that scale; the actual fitted
-      // geometry still has to pass topology and manufacturing validation.
-      const cellDiagonalMm = Math.hypot(
-        sheet().widthMm / state.designMask.width,
-        sheet().heightMm / state.designMask.height,
-      );
-      el('export-simplify').checked = true;
-      const precision = state.unit === 'in' ? 1000 : 100;
-      const toleranceMm = Math.max(0.01, Math.min(10, cellDiagonalMm));
-      el('curve-tolerance').value = String(Math.ceil(fromMm(toleranceMm) * precision) / precision);
+      // Preserve the original shadow widths and contours. Only the light
+      // runs identified by this render receive automatic straight segments.
+      el('export-simplify').checked = false;
+      el('curve-tolerance').value = state.unit === 'in' ? '0.008' : '0.2';
       updateVectorSimplificationUi();
       invalidateVectorPreview();
       draw();
@@ -3247,7 +3258,7 @@ function updateToneInspector(preview = null) {
 function vectorPreviewKey() {
   return JSON.stringify({
     revision: state.revision,
-    checked: Boolean(state.validation && state.validatedRevision === state.revision),
+    checked: Boolean(state.validation?.valid && state.validatedRevision === state.revision),
     frame: el('export-frame')?.checked !== false,
     ...vectorPreparationOptions(),
   });
@@ -3271,8 +3282,8 @@ function requestVectorPreview() {
   if (vectorPreview?.key === key) return vectorPreview.promise;
   const mask = geometryForExport();
   const panel = sheet();
-  const options = vectorPreparationOptions();
-  const baseline = state.validatedRevision === state.revision ? state.validation : null;
+  const options = { ...vectorPreparationOptions(), slatHighlights: availableSlatHighlights() };
+  const baseline = state.validatedRevision === state.revision && state.validation?.valid ? state.validation : null;
   const entry = { key, checked: Boolean(baseline), prepared: null, failed: false, pathData: '' };
   vectorPreview = entry;
   entry.promise = Promise.resolve().then(() => vectorPreviewJobs.run(baseline ? 'vector-prepare' : 'vector-preview', {
@@ -3955,6 +3966,11 @@ function updateVectorSimplificationUi(report = null) {
   }
   if (!status) return;
   if (!report) {
+    if (!enabled && availableSlatHighlights()?.regions.length) {
+      status.dataset.state = 'highlights';
+      status.textContent = 'Only long light runs are straightened. Shadow widths and contour detail are preserved; Run all checks to confirm the paths.';
+      return;
+    }
     status.dataset.state = enabled ? 'guarded' : 'exact';
     status.textContent = enabled
       ? 'Guarded simplification: topology and the rasterized manufacturing result will be checked before export.'
@@ -3962,8 +3978,12 @@ function updateVectorSimplificationUi(report = null) {
     return;
   }
   status.dataset.state = report.status;
-  if (report.status === 'simplified') {
+  if (report.status === 'simplified' && report.mode === 'slat-highlights') {
+    status.textContent = `${report.highlightRunCount} light runs straightened · shadow contour points preserved. Topology and manufacturing checks passed.`;
+  } else if (report.status === 'simplified') {
     status.textContent = `${report.sourceVertexCount.toLocaleString()} → ${report.outputVertexCount.toLocaleString()} vertices at ${formatMillimetres(report.appliedToleranceMm)} mm maximum deviation. Topology and manufacturing checks passed.`;
+  } else if (report.status === 'unchanged' && report.mode === 'slat-highlights') {
+    status.textContent = 'No long, nearly straight light runs were found; the original contours are preserved.';
   } else if (report.status === 'unchanged') {
     status.textContent = 'The exact trace already has no removable vertices within the requested tolerance; the preview and export use exact contours.';
   } else if (report.status === 'fallback') {
@@ -4652,6 +4672,7 @@ function projectFromState({ raster = null } = {}) {
       controls: readControls(),
       styleSettings: cloneStyleSettings(state.styleSettings),
       vectorDots: state.vectorDots,
+      slatHighlights: state.slatHighlights,
       painted: { keep: [...state.painted.keep], remove: [...state.painted.remove] },
       manualEdits: state.manualEdits,
       manufacturingRepairs: {
@@ -6427,6 +6448,8 @@ async function loadProjectState(project, { imported = false } = {}) {
   state.styleMaskFor = null;
   state.styleMaskFresh = false;
   state.vectorDots = normalizeVectorDots(project.editor?.vectorDots);
+  state.slatHighlights = normalizeSlatHighlights(project.editor?.slatHighlights);
+  state.placedSlatHighlights = null;
   state.placedVectorDots = [];
   state.tonePreviewCanvas = null;
   state.tonePreviewFor = null;
@@ -6572,6 +6595,8 @@ async function importFile(file) {
     state.styleMaskFresh = false;
     state.vectorDots = null;
     state.placedVectorDots = [];
+    state.slatHighlights = null;
+    state.placedSlatHighlights = null;
     state.tonePreviewCanvas = null;
     state.tonePreviewFor = null;
     state.toneStatistics = null;
@@ -6811,6 +6836,7 @@ async function saveCurrentCandidate() {
     controls: readControls(),
     styleSettings: cloneStyleSettings(state.styleSettings),
     vectorDots: state.vectorDots,
+    slatHighlights: state.slatHighlights,
     baseMask: encodeMask(state.baseMask),
     painted: { keep: [...state.painted.keep], remove: [...state.painted.remove] },
     manualEdits: state.manualEdits,
@@ -6858,6 +6884,8 @@ function restoreCandidate(id) {
   applyControls(candidate.controls);
   state.baseMask = decodeMask(candidate.baseMask);
   state.vectorDots = normalizeVectorDots(candidate.vectorDots);
+  state.slatHighlights = normalizeSlatHighlights(candidate.slatHighlights);
+  state.placedSlatHighlights = null;
   state.placedVectorDots = [];
   state.sourceMask = null;
   state.tonePreviewCanvas = null;
@@ -7911,7 +7939,8 @@ function vectorPreparationOptions() {
   const requestedToleranceMm = Math.max(0.01, Math.min(10,
     toMm(numberField('curve-tolerance', state.unit === 'in' ? 0.008 : 0.2)),
   ));
-  return { simplify, toleranceMm: requestedToleranceMm };
+  return { simplify, toleranceMm: requestedToleranceMm,
+    highlightSlats: Boolean(availableSlatHighlights()?.regions.length) };
 }
 
 function finalizePreparedVectorGeometry(result, mask, baselineValidation, options) {
@@ -7923,6 +7952,7 @@ function finalizePreparedVectorGeometry(result, mask, baselineValidation, option
     vectorManufacturingValidationRegressed(baselineValidation, postFitValidation);
   if (regressed) {
     const attempted = prepared.report;
+    const highlights = attempted.mode === 'slat-highlights';
     const blockerCount = countValidationLocations(postFitValidation, 'error');
     const warningCount = countValidationLocations(postFitValidation, 'warning');
     const currentWarningCount = countValidationLocations(baselineValidation, 'warning');
@@ -7936,9 +7966,9 @@ function finalizePreparedVectorGeometry(result, mask, baselineValidation, option
       rasterMask: mask,
       report: {
         ...prepared.report,
-        requested: simplify,
+        requested: simplify || highlights,
         status: 'fallback',
-        requestedToleranceMm: simplify ? requestedToleranceMm : null,
+        requestedToleranceMm: highlights ? attempted.requestedToleranceMm : simplify ? requestedToleranceMm : null,
         appliedToleranceMm: null,
         outputVertexCount: prepared.exactRasterContours.reduce((sum, contour) => sum + contour.length, 0),
         maximumDeviationMm: 0,
@@ -8961,6 +8991,7 @@ function wire() {
     state.source = null; state.styleMask = null; state.styleMaskFor = null;
     state.styleMaskFresh = false; state.baseMask = null;
     state.vectorDots = null; state.placedVectorDots = [];
+    state.slatHighlights = null; state.placedSlatHighlights = null;
     state.tonePreviewCanvas = null; state.tonePreviewFor = null;
     state.toneStatistics = null; state.lineToneCache = null;
     state.sourceMask = null; state.designMask = null; state.frameMask = null; state.kerfPreviewMask = null;

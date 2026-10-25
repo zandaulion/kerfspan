@@ -351,9 +351,17 @@ async def analizeaza(
                 punte_min_mm=punte_min_mm,
             )
         elif stil == "lamele":
-            masca = lamele(camp, mm_pe_px, pas_mm=pas_mm, punte_min_mm=punte_min_mm,
+            masca, zone_luminoase = lamele(camp, mm_pe_px, pas_mm=pas_mm, punte_min_mm=punte_min_mm,
                            fanta_min_mm=fanta_min_mm, gamma=gamma, orizontal=orizontal,
-                           unghi=unghi_lamele)
+                           unghi=unghi_lamele, returneaza_geometrie=True)
+            info_suplimentar = {
+                "slatHighlights": {
+                    "version": 1,
+                    "coordinateSpace": "normalized-source",
+                    "angleDeg": unghi_lamele if unghi_lamele is not None else (0.0 if orizontal else 90.0),
+                    "regions": zone_luminoase,
+                },
+            }
         elif stil == "hasura":
             masca = hasura(camp, mm_pe_px, unghi=unghi, pas_rand_mm=pas_rand_mm,
                            celula_mm=celula_mm, fanta_min_mm=fanta_min_mm,

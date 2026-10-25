@@ -953,7 +953,8 @@ def lamele(
     gamma: float = 1.4,
     orizontal: bool = False,
     unghi: float | None = None,
-) -> np.ndarray:
+    returneaza_geometrie: bool = False,
+) -> np.ndarray | tuple[np.ndarray, list[list[float]]]:
     """Parallel bars whose width follows the ink.
 
     ``unghi`` is measured from the image's horizontal axis. The legacy
@@ -976,6 +977,7 @@ def lamele(
 
     # Horizontal/vertical bars need no coordinate transform.
     intoarcere = None
+    acoperire = None
     if abs(abs(unghi) - 90.0) < 1e-9:
         lucru = camp
     elif abs(unghi) < 1e-9:
@@ -1009,6 +1011,11 @@ def lamele(
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=0.0,
         )
+        if returneaza_geometrie:
+            acoperire = cv2.warpAffine(
+                np.ones(camp.shape, np.uint8), matrice, (latime_rotita, inaltime_rotita),
+                flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+            )
         intoarcere = matrice
     inaltime, latime = lucru.shape
 
@@ -1016,20 +1023,6 @@ def lamele(
     punte_min = punte_min_mm / mm_pe_px
     punte_max = (pas_mm - fanta_min_mm) / mm_pe_px
     diagonala = isinstance(intoarcere, np.ndarray)
-    if diagonala:
-        # A pixel cell projects |sin| + |cos| pixels onto the bar normal.
-        # Centre sampling can lose half that much at either edge. Reserve
-        # that extent in BOTH the material and the opening, plus another for
-        # vector fitting and a connected full-width core after raster erosion.
-        # Otherwise even a straight minimum-width bar fails the gap checks.
-        rezerva = 2 * (abs(matrice[0, 0]) + abs(matrice[0, 1]))
-        punte_min += rezerva
-        punte_max -= rezerva
-        if punte_min > punte_max:
-            raise ReglajImposibil(
-                "The diagonal slats need more room for pixel-rounded edges. "
-                "Increase the pitch or use a higher rendering resolution."
-            )
     if pas < 2:
         raise ReglajImposibil(
             f"A pitch of {pas_mm} mm spans fewer than two pixels at this resolution."
@@ -1039,6 +1032,11 @@ def lamele(
     margine = (latime - numar * pas) / 2
     masca = np.zeros((inaltime, latime), np.uint8)
     profile = np.empty((numar, inaltime), np.float32) if diagonala else None
+    zone_luminoase = []
+    inversa = cv2.invertAffineTransform(matrice) if diagonala else None
+
+    def rezultat_cu_zone(rezultat):
+        return (rezultat, zone_luminoase) if returneaza_geometrie else rezultat
 
     for indice in range(numar):
         centru = margine + (indice + 0.5) * pas
@@ -1048,6 +1046,25 @@ def lamele(
             continue
         cerneala = lucru[:, st:dr].mean(axis=1)
         latimi = punte_min + np.power(cerneala, gamma) * (punte_max - punte_min)
+        if returneaza_geometrie:
+            # These rectangles identify LIGHT runs only. They do not change
+            # any widths or filter the shadow signal. The vector stage can
+            # remove raster steps within them while keeping dark detail exact.
+            lumina = cerneala <= 0.12
+            if acoperire is not None:
+                # Rotation padding is not a light part of the photograph.
+                lumina &= acoperire[:, st:dr].mean(axis=1) >= 0.99
+            schimbari = np.diff(np.r_[False, lumina, False].astype(np.int8))
+            for inceput, sfarsit in zip(np.flatnonzero(schimbari == 1), np.flatnonzero(schimbari == -1)):
+                if sfarsit - inceput < max(16, pas):
+                    continue
+                colturi = np.array([[st, inceput], [dr, inceput], [dr, sfarsit], [st, sfarsit]], np.float64)
+                if diagonala:
+                    colturi = colturi @ inversa[:, :2].T + inversa[:, 2]
+                elif intoarcere == "transpose":
+                    colturi = colturi[:, ::-1]
+                colturi /= np.array([camp.shape[1], camp.shape[0]])
+                zone_luminoase.append(colturi.reshape(-1).tolist())
         if diagonala:
             profile[indice] = latimi
             continue
@@ -1083,10 +1100,10 @@ def lamele(
             latimi = profile[bare, jos] * (1 - fractie) + profile[bare, sus] * fractie
             centre = margine + (bare + 0.5) * pas
             rezultat[y] = np.abs(transversal - centre) < latimi / 2
-        return rezultat
+        return rezultat_cu_zone(rezultat)
     if intoarcere == "transpose":
-        return masca.T.astype(bool)
-    return masca.astype(bool)
+        return rezultat_cu_zone(masca.T.astype(bool))
+    return rezultat_cu_zone(masca.astype(bool))
 
 
 def hasura(

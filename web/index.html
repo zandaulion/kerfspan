@@ -575,7 +575,7 @@
                   <span class="number-field compact"><input id="style-slat-angle" name="styleSlatAngle" type="number" min="-90" max="90" step="5" value="-55"><span>°</span></span>
                 </label>
                 <input id="slats-default-version" type="hidden" value="2">
-                <p class="section-help">Rendering slats enables guarded contour simplification in Export, so straight runs use fewer cutting moves. Run all checks to confirm the paths shown in the preview.</p>
+                <p class="section-help">Long light runs are straightened while shadow widths and fine contour detail are preserved. Run all checks to confirm the paths shown in the preview.</p>
               </div>
 
               <div id="style-hatch" hidden>
@@ -1163,7 +1163,7 @@
                 </select>
               </label>
               <label class="toggle-row" for="export-simplify">
-                <span>Simplify vector contours<small>Optional · guarded by post-fit validation</small></span>
+                <span>Simplify vector contours<small>Optional · affects light and shadow</small></span>
                 <input class="switch" id="export-simplify" name="exportSimplify" type="checkbox">
               </label>
               <label class="field-row" for="curve-tolerance">

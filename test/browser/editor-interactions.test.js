@@ -10,6 +10,7 @@ import { chromium } from 'playwright';
 import { AuthService } from '../../server/auth.js';
 import { initDatabase } from '../../server/db.js';
 import { createApp } from '../../server/index.js';
+import { mixedSlatFixture } from '../core/fixtures.js';
 import {
   CANDIDATE_PAYLOAD_VERSION,
   applyRasterLayers,
@@ -226,21 +227,17 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
       await fixture.page.waitForFunction(() => document.querySelector('#source-name').textContent === 'synthetic.png');
       await fixture.page.locator('#empty-state').waitFor({ state: 'hidden' });
       assert.match(await fixture.page.locator('#source-meta').textContent(), /96 × 68/);
-      await fixture.page.waitForFunction(() => document.querySelector('#export-simplify').checked);
+      await fixture.page.waitForFunction(() => document.querySelector('#style-status').textContent.startsWith('Rendered'));
       const fitting = await fixture.page.evaluate(() => {
-        const canvas = document.querySelector('#editor-canvas');
         return {
           tolerance: Number(document.querySelector('#curve-tolerance').value),
           disabled: document.querySelector('#curve-tolerance').disabled,
-          cellDiagonal: Math.hypot(
-            Number(document.querySelector('#panel-width').value) / canvas.width,
-            Number(document.querySelector('#panel-height').value) / canvas.height,
-          ),
+          broadSimplification: document.querySelector('#export-simplify').checked,
         };
       });
-      assert.equal(fitting.disabled, false);
-      assert.ok(fitting.tolerance >= Math.min(10, fitting.cellDiagonal));
-      assert.ok(fitting.tolerance <= Math.min(10, fitting.cellDiagonal) + 0.011);
+      assert.equal(fitting.disabled, true);
+      assert.equal(fitting.broadSimplification, false, 'slats must not simplify shadow contours automatically');
+      assert.equal(fitting.tolerance, 0.2);
     } finally {
       await fixture.close();
     }
@@ -279,6 +276,55 @@ function straightSlatProject() {
   });
   return JSON.stringify(project);
 }
+
+function mixedHighlightProject() {
+  const project = JSON.parse(straightSlatProject());
+  const { mask, highlights } = mixedSlatFixture();
+  project.raster = { sourceMask: encodeMask(mask), baseMask: encodeMask(mask) };
+  project.editor.slatHighlights = highlights;
+  project.manufacturing.minimumWebMm = 2;
+  project.manufacturing.profile.limits.minimumWebMm = 2;
+  Object.assign(project.editor.controls, {
+    cutStyle: 'lamele', 'export-simplify': false, 'min-web': '2',
+    'stabilize-slats': false, 'stabilizer-version': '2',
+  });
+  const candidate = project.editor.candidates[0];
+  Object.assign(candidate, {
+    baseMask: encodeMask(mask), slatHighlights: highlights, controls: { ...project.editor.controls },
+    painted: { keep: [], remove: [] }, manualEdits: [], manufacturingRepairs: null, geometry: null,
+  });
+  return JSON.stringify(project);
+}
+
+test('Slats straighten only the light runs and retain the same detailed paths after candidate restoration', async () => {
+  const fixture = await openEditor({ projectText: mixedHighlightProject() });
+  const { page } = fixture;
+  try {
+    const layer = page.locator('#vector-cut-layer');
+    await layer.locator('path').waitFor();
+    assert.equal(await page.locator('#export-simplify').isChecked(), false);
+    assert.ok(Number(await layer.getAttribute('data-vertices')) > 200, 'fine shadow contours must remain');
+    await page.getByRole('tab', { name: /Validate/ }).click();
+    await page.locator('#btn-validate').click();
+    await page.locator('#vector-cut-layer[data-checked="true"]:not([hidden])').waitFor({ timeout: 15_000 });
+    assert.match(await page.locator('#vector-simplification-status').textContent(), /light runs straightened.*shadow contour points preserved/);
+    const preview = await layer.locator('path').getAttribute('d');
+    await page.getByRole('tab', { name: /Export/ }).click();
+    const downloaded = page.waitForEvent('download');
+    await page.locator('#btn-export-svg').click();
+    const svg = fs.readFileSync(await (await downloaded).path(), 'utf8');
+    const exported = await page.evaluate((xml) => new DOMParser().parseFromString(xml, 'image/svg+xml')
+      .querySelector('[data-stencil-role="retained-material"]').getAttribute('d'), svg);
+    assert.equal(exported, preview);
+    await page.getByRole('tab', { name: /Prepare/ }).click();
+    await page.getByRole('button', { name: 'Restore Synthetic alternate' }).click();
+    await page.locator('#vector-cut-layer[data-checked="false"]:not([hidden])').waitFor();
+    assert.equal(await layer.locator('path').getAttribute('d'), preview);
+    assert.equal(await page.locator('#export-simplify').isChecked(), false);
+  } finally {
+    await fixture.close();
+  }
+});
 
 test('checked vector preview is identical to SVG export and updates when fitting is disabled', async () => {
   const fixture = await openEditor({ projectText: straightSlatProject() });
