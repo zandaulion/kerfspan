@@ -58,6 +58,7 @@ import {
   normalizeCuttingProfile,
   normalizeVectorDots,
   normalizeSlatHighlights,
+  enforceSlatMinimumWidths,
   intactCircleHoles,
   nextIssueReviewTarget,
   placeVectorDots,
@@ -243,6 +244,7 @@ const state = {
   vectorDots: null,      // exact source-space circles for Variable Dots
   placedVectorDots: [],  // the same circles after crop and panel placement, in mm
   slatHighlights: null,  // source-space light runs; shadow contours are protected
+  slatMinimumError: null,
   placedSlatHighlights: null,
   tonePreviewCanvas: null, // exact server interpretation before pattern generation
   tonePreviewFor: null,
@@ -929,6 +931,7 @@ function remapPaintedSet(indices, fromKey, toWidth, toHeight) {
 }
 
 function rebuildSource() {
+  state.slatMinimumError = null;
   let mask = null;
 
   if (state.source && hasCurrentStyleMask()) {
@@ -997,6 +1000,23 @@ function rebuildSource() {
   state.placedSlatHighlights = selectedCutStyle() === 'lamele' && state.slatHighlights
     ? placeSlatHighlights(state.slatHighlights, state.contentSourceSize, state.contentBounds, state.placement)
     : null;
+  if (state.placedSlatHighlights?.pattern) {
+    try {
+      mask = enforceSlatMinimumWidths(mask, currentSheet, state.placedSlatHighlights, {
+        frame: frameConfig(),
+        minimumWebMm: rasterWebWidthMm(Math.max(3, toMm(numberField('min-web', 3))),
+          toMm(numberField('kerf', 1.2)), state.geometryInterpretation),
+        minimumOpeningMm: Math.max(3, toMm(numberField('min-opening', 2)), toMm(numberField('kerf', 1.2))),
+      });
+    } catch (error) {
+      if (error.code !== 'SLAT_PITCH_TOO_SMALL') throw error;
+      // A placement edit can shrink an old render before a fresh source
+      // render is ready. Keep that draft editable and block cutting release.
+      state.slatMinimumError = `${error.message} Re-render Slats or increase the artwork scale.`;
+      state.styleMaskFresh = false;
+      setStyleStatus(state.slatMinimumError);
+    }
+  }
 
   // Touch-ups last, so a deliberate correction is never undone by a slider.
   // Legacy raster paint is remapped when resolution changes; ordered stroke
@@ -1143,16 +1163,26 @@ function enforceStyleSpacing() {
   const style = document.querySelector('input[name="cutStyle"]:checked')?.value || 'sablon';
   const kerf = toMm(numberField('kerf', 1.2));
   const web = rasterWebWidthMm(
-    toMm(numberField('min-web', 3)),
+    Math.max(style === 'lamele' ? 3 : 0, toMm(numberField('min-web', 3))),
     kerf,
     state.geometryInterpretation,
   );
-  const slot = Math.max(kerf, toMm(numberField('min-opening', 2)));
+  const slot = Math.max(style === 'lamele' ? 3 : 0, kerf, toMm(numberField('min-opening', 2)));
   // Merely fitting one minimum web beside one minimum opening leaves no range
   // in which tone can change the geometry. Reserve one additional detail band
   // so the lightest and darkest parts of a photograph cannot become identical.
   const minim = fromMm(web + slot + Math.max(slot, web / 2));
   const ajustate = [];
+
+  const lightWidth = style === 'lamele' ? el('style-slat-light-width') : null;
+  if (lightWidth) {
+    const minimum = fromMm(Math.max(3, toMm(numberField('min-web', 3))));
+    lightWidth.min = String(roundUnit(minimum));
+    if (lightWidth.value !== '' && Number(lightWidth.value) < minimum) {
+      lightWidth.value = String(roundUnit(minimum));
+      ajustate.push({ id: 'style-slat-light-width', label: 'light-area bar width', value: lightWidth.value, unit: state.unit });
+    }
+  }
 
   const pitch = style === 'lamele' ? el('style-pitch') : null;
   if (pitch) {
@@ -2132,6 +2162,7 @@ function geometryForExport() {
 function currentGeometryIsValidated() {
   return Boolean(
     state.designMask &&
+    !state.slatMinimumError &&
     state.validated &&
     state.validation?.valid &&
     state.validatedRevision === state.revision
@@ -2253,6 +2284,10 @@ function currentValidationOptions() {
 }
 
 async function validateCurrentGeometry({ reviewAnchor = null, focusReview = false } = {}) {
+  if (state.slatMinimumError) {
+    toast(state.slatMinimumError);
+    return null;
+  }
   const validationMask = cloneGeometry(geometryForExport());
   const requestedRevision = state.revision;
   let validation;
@@ -3998,7 +4033,7 @@ function updateReadouts() {
   for (const node of all('[data-unit-label]')) node.textContent = state.unit;
   const lightWidth = el('style-slat-light-width');
   if (lightWidth) {
-    lightWidth.min = String(roundUnit(fromMm(0.1)));
+    lightWidth.min = String(roundUnit(fromMm(Math.max(3, toMm(numberField('min-web', 3))))));
     lightWidth.max = String(roundUnit(fromMm(40)));
     lightWidth.step = state.unit === 'in' ? '0.001' : '0.1';
   }
@@ -6516,6 +6551,7 @@ async function loadProjectState(project, { imported = false } = {}) {
   state.styleMaskFresh = false;
   state.vectorDots = normalizeVectorDots(project.editor?.vectorDots);
   state.slatHighlights = normalizeSlatHighlights(project.editor?.slatHighlights);
+  state.slatMinimumError = null;
   state.placedSlatHighlights = null;
   state.placedVectorDots = [];
   state.tonePreviewCanvas = null;

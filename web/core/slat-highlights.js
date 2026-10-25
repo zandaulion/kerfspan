@@ -1,4 +1,8 @@
 import { pointFromArtworkPlacement } from './placement.js';
+import { assertMask, assertSheet } from './mask.js';
+import { createRectangularFrameMask } from './frame.js';
+import { analyzeConnectivity } from './connectivity.js';
+import { erodeMaskPhysical } from './morphology.js';
 
 /** Light-tone regions from the generator; never inferred from thin shadows. */
 export function normalizeSlatHighlights(input) {
@@ -15,27 +19,115 @@ export function normalizeSlatHighlights(input) {
     }
     return region.slice();
   });
-  return { version: 1, coordinateSpace: 'normalized-source', angleDeg: input.angleDeg, regions };
+  const result = { version: 1, coordinateSpace: 'normalized-source', angleDeg: input.angleDeg, regions };
+  if (input.pattern != null) {
+    const { origin, pitch, count, minimumWeb, minimumOpening } = input.pattern;
+    if (!Array.isArray(origin) || origin.length !== 2 || origin.some((value) => !Number.isFinite(value) || Math.abs(value) > 100) ||
+        ![pitch, minimumWeb, minimumOpening].every((value) => Number.isFinite(value) && value > 0 && value <= 100) ||
+        !Number.isInteger(count) || count < 1 || count > 100_000) {
+      throw new RangeError('Invalid slat manufacturing pattern');
+    }
+    result.pattern = { origin: origin.slice(), pitch, count, minimumWeb, minimumOpening };
+  }
+  return result;
 }
 
 /** Use the same crop, scale and rotation as the original slat raster. */
 export function placeSlatHighlights(input, sourceSize, bounds, placement) {
   const source = normalizeSlatHighlights(input);
   if (!source || !sourceSize || !bounds || !placement) return null;
-  return {
+  const pointOnSheet = (x, y) => pointFromArtworkPlacement(placement,
+    (x * sourceSize.width - bounds.x) / bounds.width,
+    (y * sourceSize.height - bounds.y) / bounds.height);
+  const placed = {
     coordinateSpace: 'sheet-mm',
     angleDeg: source.angleDeg + (placement.rotationDeg || 0),
     regions: source.regions.map((region) => {
       const result = [];
       for (let index = 0; index < 8; index += 2) {
-        const point = pointFromArtworkPlacement(placement,
-          (region[index] * sourceSize.width - bounds.x) / bounds.width,
-          (region[index + 1] * sourceSize.height - bounds.y) / bounds.height);
+        const point = pointOnSheet(region[index], region[index + 1]);
         result.push(point.x, point.y);
       }
       return result;
     }),
   };
+  if (source.pattern) {
+    const scale = placement.widthMm * sourceSize.width / bounds.width;
+    placed.pattern = {
+      origin: pointOnSheet(...source.pattern.origin), count: source.pattern.count,
+      pitchMm: source.pattern.pitch * scale,
+      minimumWebMm: source.pattern.minimumWeb * scale,
+      minimumOpeningMm: source.pattern.minimumOpening * scale,
+      footprint: [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => pointOnSheet(x, y)),
+    };
+  }
+  return placed;
+}
+
+/** Enforce continuous minimum-width bands on the final manufacturing grid. */
+export function enforceSlatMinimumWidths(mask, sheet, guide, {
+  minimumWebMm = 3, minimumOpeningMm = 3, frame = { enabled: false },
+} = {}) {
+  assertMask(mask);
+  assertSheet(sheet);
+  const pattern = guide?.pattern;
+  if (!pattern) return mask;
+  const angle = guide.angleDeg * Math.PI / 180;
+  const nx = -Math.sin(angle); const ny = Math.cos(angle);
+  const pixelX = sheet.widthMm / mask.width; const pixelY = sheet.heightMm / mask.height;
+  const cellAcross = Math.abs(nx) * pixelX + Math.abs(ny) * pixelY;
+  const web = Math.max(minimumWebMm, pattern.minimumWebMm);
+  const opening = Math.max(minimumOpeningMm, pattern.minimumOpeningMm);
+  if (pattern.pitchMm + 1e-9 < web + opening + 3 * cellAcross) {
+    const error = new RangeError('Slats need a wider bar pitch to preserve the minimum metal and cut widths at this resolution.');
+    error.code = 'SLAT_PITCH_TOO_SMALL';
+    throw error;
+  }
+  const [corner, right, , bottom] = pattern.footprint;
+  const ux = right.x - corner.x; const uy = right.y - corner.y;
+  const vx = bottom.x - corner.x; const vy = bottom.y - corner.y;
+  const widthSquared = ux * ux + uy * uy; const heightSquared = vx * vx + vy * vy;
+  const originAcross = nx * pattern.origin.x + ny * pattern.origin.y;
+  const output = { ...mask, data: Uint8Array.from(mask.data) };
+  // Include one extra cell projection so the conservative full-width core
+  // stays connected along diagonals instead of becoming isolated core dots.
+  const halfWeb = (web + 2 * cellAcross) / 2;
+  const halfOpening = (opening + cellAcross) / 2;
+  for (let y = 0; y < mask.height; y += 1) {
+    const py = (y + 0.5) * pixelY;
+    for (let x = 0; x < mask.width; x += 1) {
+      const px = (x + 0.5) * pixelX;
+      const dx = px - corner.x; const dy = py - corner.y;
+      const u = (dx * ux + dy * uy) / widthSquared;
+      const v = (dx * vx + dy * vy) / heightSquared;
+      if (u < 0 || u >= 1 || v < 0 || v >= 1) continue;
+      const across = nx * px + ny * py - originAcross;
+      const bar = Math.round(across / pattern.pitchMm);
+      const slot = Math.floor(across / pattern.pitchMm);
+      if (bar >= 0 && bar < pattern.count && Math.abs(across - bar * pattern.pitchMm) <= halfWeb) {
+        output.data[y * mask.width + x] = 1;
+      } else if (slot >= 0 && slot + 1 < pattern.count &&
+          Math.abs(across - (slot + 0.5) * pattern.pitchMm) <= halfOpening) {
+        output.data[y * mask.width + x] = 0;
+      }
+    }
+  }
+  // Clipping an angled slot against the frame can leave a separate needle or
+  // corner fragment. Omit any generated cut that cannot contain the opening
+  // diameter; never leave hundreds of uncuttable fragments for manual repair.
+  const frameMask = createRectangularFrameMask(mask.width, mask.height, frame, sheet);
+  const removed = { ...mask, data: Uint8Array.from(output.data, (value, index) =>
+    value === 0 && frameMask.data[index] === 0 ? 1 : 0) };
+  const cuts = analyzeConnectivity(removed, { connectivity: 8, anchorBoundary: false });
+  const core = erodeMaskPhysical(removed, opening / 2, sheet);
+  const surviving = new Uint8Array(cuts.componentCount + 1);
+  for (let index = 0; index < core.data.length; index += 1) {
+    if (core.data[index]) surviving[cuts.labels[index]] = 1;
+  }
+  for (let index = 0; index < output.data.length; index += 1) {
+    if (cuts.labels[index] > 0 && !surviving[cuts.labels[index]]) output.data[index] = 1;
+  }
+  return output;
 }
 
 function distanceToSegment(point, start, end) {

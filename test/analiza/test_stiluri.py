@@ -305,6 +305,28 @@ class TestLamele(unittest.TestCase):
                       punte_min_mm=3, fanta_min_mm=2, latime_lumina_mm=8)
         self.assertLessEqual(max(secvente_pe_rand(wide, 50)), 16)
 
+    def test_manufacturing_grid_locates_the_original_bars_at_every_angle(self):
+        height, width = 180, 260
+        for angle in (-90, -55, 0, 45, 90):
+            with self.subTest(angle=angle):
+                config = dict(pas_mm=10, punte_min_mm=3, fanta_min_mm=3, unghi=angle)
+                mask, _, pattern = lamele(camp_uniform(height, width, 0), MM_PE_PX,
+                                           returneaza_geometrie=True, returneaza_model=True, **config)
+                np.testing.assert_array_equal(mask, lamele(camp_uniform(height, width, 0), MM_PE_PX, **config))
+                origin = np.array(pattern['origin']) * [width, height]
+                radians = np.radians(angle)
+                along = np.array([np.cos(radians), np.sin(radians)])
+                across = np.array([-np.sin(radians), np.cos(radians)])
+                checked = 0
+                for index in range(pattern['count']):
+                    point = origin + across * index * pattern['pitch'] * width
+                    point += along * np.dot(np.array([width / 2, height / 2]) - point, along)
+                    x, y = np.floor(point).astype(int)
+                    if 0 <= x < width and 0 <= y < height:
+                        self.assertTrue(mask[y, x], f'bar {index} is missing at its manufacturing origin')
+                        checked += 1
+                self.assertGreater(checked, 3)
+
 
 class TestRezolutie(unittest.TestCase):
     def test_o_limita_sub_un_pixel_e_refuzata(self):

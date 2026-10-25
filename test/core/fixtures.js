@@ -1,6 +1,30 @@
 import { RETAINED, createMask } from "../../web/core/mask.js";
 import { placeSlatHighlights } from "../../web/core/slat-highlights.js";
 
+/** A synthetic tone pattern with narrow light bars and narrow dark slots. */
+export function unsafeSlatFixture(angleDeg = -55) {
+  const mask = createMask(240, 160);
+  const sheet = { widthMm: 120, heightMm: 80 };
+  const angle = angleDeg * Math.PI / 180;
+  const nx = -Math.sin(angle); const ny = Math.cos(angle);
+  const corners = [[0, 0], [120, 0], [120, 80], [0, 80]];
+  const minAcross = Math.min(...corners.map(([x, y]) => nx * x + ny * y)) - 5;
+  const count = Math.ceil((Math.max(...corners.map(([x, y]) => nx * x + ny * y)) - minAcross) / 10) + 1;
+  const pattern = { origin: { x: nx * minAcross, y: ny * minAcross }, pitchMm: 10, count,
+    minimumWebMm: 3, minimumOpeningMm: 3, footprint: corners.map(([x, y]) => ({ x, y })) };
+  for (let y = 0; y < mask.height; y += 1) for (let x = 0; x < mask.width; x += 1) {
+    const px = (x + 0.5) / 2; const py = (y + 0.5) / 2;
+    const across = nx * px + ny * py - minAcross;
+    const along = Math.cos(angle) * px + Math.sin(angle) * py;
+    const width = 1.5 + 7 * (0.5 + 0.5 * Math.sin(along / 11)) ** 2;
+    mask.data[y * mask.width + x] = Math.abs(across - Math.round(across / 10) * 10) < width / 2 ? 1 : 0;
+  }
+  const highlights = { version: 1, coordinateSpace: 'normalized-source', angleDeg, regions: [],
+    pattern: { origin: [pattern.origin.x / 120, pattern.origin.y / 80], pitch: 10 / 120,
+      count, minimumWeb: 3 / 120, minimumOpening: 3 / 120 } };
+  return { mask, sheet, highlights, guide: { coordinateSpace: 'sheet-mm', angleDeg, regions: [], pattern } };
+}
+
 /**
  * Creates a semantic mask from readable rows. `#` is retained material and
  * every other character is removed material.

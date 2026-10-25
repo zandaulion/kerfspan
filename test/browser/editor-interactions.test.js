@@ -10,7 +10,7 @@ import { chromium } from 'playwright';
 import { AuthService } from '../../server/auth.js';
 import { initDatabase } from '../../server/db.js';
 import { createApp } from '../../server/index.js';
-import { mixedSlatFixture } from '../core/fixtures.js';
+import { mixedSlatFixture, unsafeSlatFixture } from '../core/fixtures.js';
 import {
   CANDIDATE_PAYLOAD_VERSION,
   applyRasterLayers,
@@ -253,10 +253,11 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
         response.request().postData()?.includes('latime_lumina_lamele_mm'));
       await lightWidth.fill('2');
       await customRender;
-      assert.equal(renders.at(-1).get('latime_lumina_lamele_mm'), '2');
-      assert.equal(renders.at(-1).get('punte_min_mm'), '3', 'an artistic width must not lower the cutting-profile minimum');
+      assert.equal(renders.at(-1).get('latime_lumina_lamele_mm'), '3');
+      assert.equal(await lightWidth.inputValue(), '3', 'Slats must raise an undersized light width before rendering');
+      assert.equal(renders.at(-1).get('punte_min_mm'), '3', 'the cutting-profile minimum stays unchanged');
       assert.match(await fixture.page.locator('#style-guidance-reason').textContent(),
-        /Light-area bars use 2 mm; Validate still checks the 3 mm minimum/);
+        /Light-area bars use 3 mm; Validate still checks the 3 mm minimum/);
       const autoRender = fixture.page.waitForResponse((response) => response.url().endsWith('/api/analizeaza') &&
         !response.request().postData()?.includes('latime_lumina_lamele_mm'));
       await lightWidth.fill('');
@@ -270,29 +271,29 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
 
 test('Slat light width survives project download and unit conversion; older candidates restore Auto', async () => {
   const project = JSON.parse(mixedHighlightProject());
-  project.editor.controls['style-slat-light-width'] = '2';
+  project.editor.controls['style-slat-light-width'] = '3.5';
   const fixture = await openEditor({ projectText: JSON.stringify(project) });
   const { page } = fixture;
   try {
     const width = page.locator('#style-slat-light-width');
-    assert.equal(await width.inputValue(), '2');
+    assert.equal(await width.inputValue(), '3.5');
     await page.getByRole('tab', { name: /Panel/ }).click();
     await page.locator('#measurement-unit').selectOption('in');
-    assert.ok(Math.abs(Number(await width.inputValue()) * 25.4 - 2) < 0.013);
+    assert.ok(Math.abs(Number(await width.inputValue()) * 25.4 - 3.5) < 0.013);
     await page.locator('#measurement-unit').selectOption('mm');
-    assert.equal(await width.inputValue(), '2');
+    assert.equal(await width.inputValue(), '3.5');
     await page.getByRole('tab', { name: /Export/ }).click();
     const download = page.waitForEvent('download');
     await page.locator('#btn-download-project').click();
     const saved = JSON.parse(fs.readFileSync(await (await download).path(), 'utf8'));
-    assert.equal(saved.editor.controls['style-slat-light-width'], '2');
+    assert.equal(saved.editor.controls['style-slat-light-width'], '3.5');
     await page.getByRole('tab', { name: /Prepare/ }).click();
     await page.getByRole('button', { name: 'Restore Synthetic alternate' }).click();
     assert.equal(await width.inputValue(), '', 'old candidates must not inherit a width from the current render');
     await page.locator('#file-input').setInputFiles({
       name: 'synthetic-width.stencil.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved)),
     });
-    await page.waitForFunction(() => document.querySelector('#style-slat-light-width').value === '2');
+    await page.waitForFunction(() => document.querySelector('#style-slat-light-width').value === '3.5');
   } finally {
     await fixture.close();
   }
@@ -358,6 +359,52 @@ function repairHighlightProject() {
   project.raster = { sourceMask: encodeMask(mask), baseMask: encodeMask(mask) };
   return JSON.stringify(project);
 }
+
+test('Slats generation enforces the final 3 mm floor before validation and export', async () => {
+  const project = JSON.parse(syntheticProject());
+  const { mask, sheet, highlights } = unsafeSlatFixture();
+  project.sheet = sheet;
+  project.frame = { enabled: true, thicknessMm: 6, insetMm: 0, sides: { top: true, right: true, bottom: true, left: true } };
+  project.manufacturing.minimumWebMm = 3;
+  project.manufacturing.minimumOpeningMm = 3;
+  project.manufacturing.profile.limits.minimumWebMm = 3;
+  project.manufacturing.profile.limits.minimumOpeningMm = 3;
+  project.raster = { sourceMask: encodeMask(mask), baseMask: encodeMask(mask) };
+  project.editor.slatHighlights = highlights;
+  Object.assign(project.editor.controls, { cutStyle: 'lamele', 'panel-width': '120', 'panel-height': '80',
+    'frame-width': '6', anchorEdge: ['top', 'right', 'bottom', 'left'], 'style-pitch': '10',
+    'min-web': '3', 'min-opening': '3', 'export-simplify': false, 'stabilize-slats': false, 'stabilizer-version': '2' });
+  const fixture = await openEditor({ projectText: JSON.stringify(project) });
+  const { page } = fixture;
+  try {
+    await page.getByRole('tab', { name: /Validate/ }).click();
+    await page.locator('#btn-validate').click();
+    const layer = page.locator('#vector-cut-layer[data-checked="true"]:not([hidden])');
+    await layer.waitFor();
+    assert.equal(await page.locator('#filter-count-error').textContent(), '0');
+    const path = await layer.locator('path').getAttribute('d');
+    await page.getByRole('tab', { name: /Export/ }).click();
+    const download = page.waitForEvent('download');
+    await page.locator('#btn-export-svg').click();
+    const svg = fs.readFileSync(await (await download).path(), 'utf8');
+    const exported = await page.evaluate((xml) => new DOMParser().parseFromString(xml, 'image/svg+xml')
+      .querySelector('[data-stencil-role="retained-material"]').getAttribute('d'), svg);
+    assert.equal(exported, path);
+    await page.getByRole('tab', { name: /Panel/ }).click();
+    await page.locator('#artwork-scale').evaluate((node) => {
+      node.value = '50';
+      node.dispatchEvent(new Event('input', { bubbles: true }));
+      node.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.waitForFunction(() => document.querySelector('#style-status').textContent.includes('Re-render Slats'));
+    await page.getByRole('tab', { name: /Validate/ }).click();
+    await page.locator('#btn-validate').click();
+    assert.equal(await page.locator('#btn-export-svg').isDisabled(), true,
+      'shrinking below the 3 mm generation floor must keep the draft editable and block cutting export');
+  } finally {
+    await fixture.close();
+  }
+});
 
 test('regenerating a no-change Slats repair preview keeps the same straight paths and blocker count', async () => {
   const fixture = await openEditor({ projectText: repairHighlightProject() });

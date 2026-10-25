@@ -255,15 +255,22 @@ async def analizeaza(
         punte_min_mm = punte_pentru_interpretare(
             punte_min_mm, kerf_mm, interpretare_geometrie
         )
-        if stil == "lamele" and latime_lumina_lamele_mm is not None:
-            latime_lumina_lamele_mm = punte_pentru_interpretare(
-                latime_lumina_lamele_mm, kerf_mm, interpretare_geometrie
-            )
+        if stil == "lamele":
+            punte_min_mm = max(punte_min_mm, punte_pentru_interpretare(3.0, kerf_mm, interpretare_geometrie))
+            fanta_min_mm = max(3.0, fanta_min_mm)
+            if latime_lumina_lamele_mm is not None:
+                latime_lumina_lamele_mm = max(punte_min_mm, punte_pentru_interpretare(
+                    latime_lumina_lamele_mm, kerf_mm, interpretare_geometrie
+                ))
     except ReglajImposibil as e:
         raise HTTPException(422, str(e)) from e
     limita_min_mm = min(punte_min_mm, fanta_min_mm)
     if stil == "lamele" and latime_lumina_lamele_mm is not None:
         limita_min_mm = min(limita_min_mm, latime_lumina_lamele_mm)
+    if stil == "lamele":
+        # Eight samples across the smallest Slats feature preserve tonal
+        # detail when final placement enforces the manufacturing floor.
+        limita_min_mm *= PIXELI_PE_LIMITA / 8.0
     lat_geometrie = _latime_lucru(coala_lat_mm, limita_min_mm)
 
     if stil == "linie_art":
@@ -359,16 +366,17 @@ async def analizeaza(
                 punte_min_mm=punte_min_mm,
             )
         elif stil == "lamele":
-            masca, zone_luminoase = lamele(camp, mm_pe_px, pas_mm=pas_mm, punte_min_mm=punte_min_mm,
+            masca, zone_luminoase, model_lamele = lamele(camp, mm_pe_px, pas_mm=pas_mm, punte_min_mm=punte_min_mm,
                            fanta_min_mm=fanta_min_mm, gamma=gamma, orizontal=orizontal,
                            unghi=unghi_lamele, returneaza_geometrie=True,
-                           latime_lumina_mm=latime_lumina_lamele_mm)
+                           latime_lumina_mm=latime_lumina_lamele_mm, returneaza_model=True)
             info_suplimentar = {
                 "slatHighlights": {
                     "version": 1,
                     "coordinateSpace": "normalized-source",
                     "angleDeg": unghi_lamele if unghi_lamele is not None else (0.0 if orizontal else 90.0),
                     "regions": zone_luminoase,
+                    "pattern": model_lamele,
                 },
             }
         elif stil == "hasura":

@@ -955,7 +955,8 @@ def lamele(
     unghi: float | None = None,
     returneaza_geometrie: bool = False,
     latime_lumina_mm: float | None = None,
-) -> np.ndarray | tuple[np.ndarray, list[list[float]]]:
+    returneaza_model: bool = False,
+) -> np.ndarray | tuple[np.ndarray, list[list[float]]] | tuple[np.ndarray, list[list[float]], dict]:
     """Parallel bars whose width follows the ink.
 
     ``unghi`` is measured from the image's horizontal axis. The legacy
@@ -1046,6 +1047,24 @@ def lamele(
     inversa = cv2.invertAffineTransform(matrice) if diagonala else None
 
     def rezultat_cu_zone(rezultat):
+        if returneaza_model:
+            origine = np.array([margine + pas / 2, 0.0])
+            if abs(unghi - 90.0) < 1e-9:
+                # At +90 the analytical normal points left, whereas the
+                # legacy vertical raster enumerates its bars left to right.
+                origine[0] = margine + (numar - 0.5) * pas
+            if diagonala:
+                origine = origine @ inversa[:, :2].T + inversa[:, 2]
+            elif intoarcere == "transpose":
+                origine = origine[::-1]
+            origine /= np.array([camp.shape[1], camp.shape[0]])
+            latime_sursa_mm = camp.shape[1] * mm_pe_px
+            model = {
+                "origin": origine.tolist(), "pitch": pas_mm / latime_sursa_mm,
+                "count": numar, "minimumWeb": punte_min_mm / latime_sursa_mm,
+                "minimumOpening": fanta_min_mm / latime_sursa_mm,
+            }
+            return rezultat, zone_luminoase, model
         return (rezultat, zone_luminoase) if returneaza_geometrie else rezultat
 
     for indice in range(numar):
