@@ -8,8 +8,40 @@ import {
   traceMaskContours,
   validateVectorGeometry,
   vectorManufacturingValidationRegressed,
+  createMask,
+  validateDesign,
 } from '../../web/core/index.js';
 import { maskFromAscii } from './fixtures.js';
+
+test('a minimum-width diagonal slat exports long straight edges without new manufacturing failures', () => {
+  const mask = createMask(320, 240);
+  const sheet = { widthMm: 192, heightMm: 144 }; // 0.6 mm cells, as in a zoomed panel
+  const angle = -55 * Math.PI / 180;
+  const sine = Math.sin(angle); const cosine = Math.cos(angle);
+  const cellExtent = Math.abs(sine) + Math.abs(cosine);
+  const centre = -sine * mask.width / 2 + cosine * mask.height / 2;
+  const halfWidth = (3 / 0.6 + 2 * cellExtent) / 2;
+  for (let y = 0; y < mask.height; y += 1) {
+    for (let x = 0; x < mask.width; x += 1) {
+      mask.data[y * mask.width + x] = Math.abs(-sine * (x + 0.5) + cosine * (y + 0.5) - centre) < halfWidth ? 1 : 0;
+    }
+  }
+  const validationOptions = {
+    sheet, minimumWebMm: 3, minimumOpeningMm: 2, kerfMm: 1.2, requireAnchored: false,
+  };
+  const baseline = validateDesign(mask, validationOptions);
+  assert.equal(baseline.valid, true);
+  const prepared = prepareVectorGeometry(mask, sheet, [], {
+    simplify: true, toleranceMm: Math.hypot(0.6, 0.6),
+  });
+  assert.equal(prepared.report.status, 'simplified');
+  assert.ok(prepared.report.sourceVertexCount > 600);
+  assert.ok(prepared.report.outputVertexCount <= 8, 'two straight sides and the clipped ends replace the pixel staircase');
+  const postFit = validateDesign(prepared.rasterMask, validationOptions);
+  assert.equal(vectorManufacturingValidationRegressed(baseline, postFit), false);
+  const dxf = exportDxf(mask, sheet, { preparedGeometry: prepared });
+  assert.ok((dxf.match(/\n0\nVERTEX\n/g) ?? []).length <= 8);
+});
 
 test('physical-tolerance simplification reduces nodes without exceeding its bound', () => {
   const rows = Array.from({ length: 20 }, (_, y) => (

@@ -216,7 +216,8 @@ class TestLamele(unittest.TestCase):
                 margin = (across_size - count * pitch) / 2
                 across = -sine * (xx + 0.5) + cosine * (yy + 0.5) - low
                 bar = np.clip(np.floor((across - margin) / pitch), 0, count - 1)
-                expected = np.abs(across - (margin + (bar + 0.5) * pitch)) < web / 2
+                reserved_web = web + 2 * (abs(sine) + abs(cosine))
+                expected = np.abs(across - (margin + (bar + 0.5) * pitch)) < reserved_web / 2
                 actual = lamele(camp_uniform(height, width, 0), MM_PE_PX,
                                 pas_mm=13.7, punte_min_mm=2.3, fanta_min_mm=3,
                                 unghi=angle)
@@ -229,6 +230,11 @@ class TestLamele(unittest.TestCase):
                       pas_mm=13.7, punte_min_mm=2.3, fanta_min_mm=3, unghi=-55)
         self.assertTrue(np.all(dark[light]), "darkening must preserve the minimum web")
         self.assertGreater(dark.sum(), light.sum() * 2)
+
+    def test_diagonal_pitch_reserves_room_for_both_raster_edges(self):
+        with self.assertRaisesRegex(ReglajImposibil, "pixel-rounded edges"):
+            lamele(camp_uniform(100, 100, 0), MM_PE_PX,
+                   pas_mm=5, punte_min_mm=2, fanta_min_mm=3, unghi=-55)
 
 
 class TestRezolutie(unittest.TestCase):

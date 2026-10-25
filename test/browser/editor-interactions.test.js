@@ -226,6 +226,21 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
       await fixture.page.waitForFunction(() => document.querySelector('#source-name').textContent === 'synthetic.png');
       await fixture.page.locator('#empty-state').waitFor({ state: 'hidden' });
       assert.match(await fixture.page.locator('#source-meta').textContent(), /96 × 68/);
+      await fixture.page.waitForFunction(() => document.querySelector('#export-simplify').checked);
+      const fitting = await fixture.page.evaluate(() => {
+        const canvas = document.querySelector('#editor-canvas');
+        return {
+          tolerance: Number(document.querySelector('#curve-tolerance').value),
+          disabled: document.querySelector('#curve-tolerance').disabled,
+          cellDiagonal: Math.hypot(
+            Number(document.querySelector('#panel-width').value) / canvas.width,
+            Number(document.querySelector('#panel-height').value) / canvas.height,
+          ),
+        };
+      });
+      assert.equal(fitting.disabled, false);
+      assert.ok(fitting.tolerance >= Math.min(10, fitting.cellDiagonal));
+      assert.ok(fitting.tolerance <= Math.min(10, fitting.cellDiagonal) + 0.011);
     } finally {
       await fixture.close();
     }

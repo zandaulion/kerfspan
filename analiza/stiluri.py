@@ -1015,6 +1015,21 @@ def lamele(
     pas = pas_mm / mm_pe_px
     punte_min = punte_min_mm / mm_pe_px
     punte_max = (pas_mm - fanta_min_mm) / mm_pe_px
+    diagonala = isinstance(intoarcere, np.ndarray)
+    if diagonala:
+        # A pixel cell projects |sin| + |cos| pixels onto the bar normal.
+        # Centre sampling can lose half that much at either edge. Reserve
+        # that extent in BOTH the material and the opening, plus another for
+        # vector fitting and a connected full-width core after raster erosion.
+        # Otherwise even a straight minimum-width bar fails the gap checks.
+        rezerva = 2 * (abs(matrice[0, 0]) + abs(matrice[0, 1]))
+        punte_min += rezerva
+        punte_max -= rezerva
+        if punte_min > punte_max:
+            raise ReglajImposibil(
+                "The diagonal slats need more room for pixel-rounded edges. "
+                "Increase the pitch or use a higher rendering resolution."
+            )
     if pas < 2:
         raise ReglajImposibil(
             f"A pitch of {pas_mm} mm spans fewer than two pixels at this resolution."
@@ -1023,7 +1038,6 @@ def lamele(
     numar = max(1, int(latime // pas))
     margine = (latime - numar * pas) / 2
     masca = np.zeros((inaltime, latime), np.uint8)
-    diagonala = isinstance(intoarcere, np.ndarray)
     profile = np.empty((numar, inaltime), np.float32) if diagonala else None
 
     for indice in range(numar):

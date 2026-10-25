@@ -1688,6 +1688,20 @@ async function renderStyle() {
     }
     setStyleStatus(`Rendered · ${Math.round(payload.info.material * 100)}% material`);
     refresh({ immediate: true });
+    if (requestedStyle === 'lamele' && state.designMask) {
+      // A tolerance below one raster cell leaves diagonal staircases intact.
+      // Slats start with guarded fitting at that scale; the actual fitted
+      // geometry still has to pass topology and manufacturing validation.
+      const cellDiagonalMm = Math.hypot(
+        sheet().widthMm / state.designMask.width,
+        sheet().heightMm / state.designMask.height,
+      );
+      el('export-simplify').checked = true;
+      const precision = state.unit === 'in' ? 1000 : 100;
+      const toleranceMm = Math.max(0.01, Math.min(10, cellDiagonalMm));
+      el('curve-tolerance').value = String(Math.ceil(fromMm(toleranceMm) * precision) / precision);
+      updateVectorSimplificationUi();
+    }
     if (!hadPlacedMask) fitToView();
     recordProcessingMetric('render', performance.now() - renderStartedAt);
     return true;
