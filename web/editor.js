@@ -7343,7 +7343,9 @@ async function acceptSupportProposal() {
   state.supportProposal = null;
   state.automaticSupportsStale = false;
   selectBridge(null);
-  refresh({ immediate: true, rebuildSourceMask: false });
+  // The proposal was planned against the repaired source. Keep that same
+  // source when replacing supports; refresh still invalidates validation.
+  refresh({ immediate: true, rebuildSourceMask: false, preserveManufacturingRepairs: true });
   state.slatStabilizersReviewedRevision = state.revision;
   updateExportReadiness();
   pushHistory();

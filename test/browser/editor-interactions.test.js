@@ -261,6 +261,35 @@ test('candidate restoration applies the saved recipe and redraws its geometry', 
   }
 });
 
+test('accepting smart supports preserves active manufacturing repairs and requires validation', async () => {
+  const fixture = await openEditor();
+  try {
+    await fixture.page.getByRole('button', { name: 'Restore Synthetic alternate' }).click();
+    await fixture.page.locator('[data-candidate-id="candidate-browser"].is-selected').waitFor();
+    assert.equal(await fixture.page.locator('#repair-layer-title').textContent(), 'Manufacturing repair layer active');
+
+    await fixture.page.getByRole('tab', { name: /Support/ }).click();
+    await fixture.page.locator('#btn-auto-bridge').click();
+    await fixture.page.locator('#btn-accept-support-proposal').waitFor({ timeout: 15_000 });
+    await fixture.page.locator('#btn-accept-support-proposal').click();
+
+    assert.equal(await fixture.page.locator('#repair-layer-title').textContent(), 'Manufacturing repair layer active');
+    assert.equal(await fixture.page.locator('#btn-export-svg').isDisabled(), true);
+    await fixture.page.getByRole('tab', { name: /Export/ }).click();
+    const downloadPromise = fixture.page.waitForEvent('download');
+    await fixture.page.locator('#btn-download-project').click();
+    const download = await downloadPromise;
+    const project = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+    assert.equal(project.editor.manufacturingRepairs.enabled, true);
+    assert.equal(project.editor.manufacturingRepairs.stale, false);
+    assert.deepEqual(project.editor.manufacturingRepairs.keep, [300, 301]);
+    assert.deepEqual(project.editor.manufacturingRepairs.remove, [400]);
+    assert.ok(project.bridges.some((bridge) => bridge.source === 'automatic'));
+  } finally {
+    await fixture.close();
+  }
+});
+
 test('native editable-field undo does not consume project geometry history', async () => {
   const fixture = await openEditor();
   try {
